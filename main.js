@@ -1,12 +1,15 @@
 import { EyeTracker } from './EyeTracker.js';
+import { Pipeline } from './Pipeline.js';
 
 const dot = document.getElementById('gaze-dot');
 const status = document.getElementById('status-display');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const calibOverlay = document.getElementById('calibration-overlay');
+const presentationUI = document.getElementById('presentation-ui');
 
 const tracker = new EyeTracker();
+const pipeline = new Pipeline();
 let isCalibrated = false;
 
 // Callback to handle gaze data
@@ -17,6 +20,9 @@ const handleGaze = (x, y) => {
     dot.style.display = 'block';
     dot.style.left = `${x}px`;
     dot.style.top = `${y}px`;
+
+    // Run the content selection pipeline
+    pipeline.process({x, y}, presentationUI);
 };
 
 // --- NEW: Calibration Logic ---
@@ -62,6 +68,7 @@ function runCalibration(onComplete) {
             if (pointsRemaining === 0) {
                 calibOverlay.style.display = 'none';
                 isCalibrated = true;
+                if (presentationUI) presentationUI.style.display = 'block';
                 onComplete();
             }
         });
@@ -89,6 +96,7 @@ stopBtn.addEventListener('click', () => {
     tracker.stop();
     dot.style.display = 'none';
     isCalibrated = false; // Reset calibration state
+    if (presentationUI) presentationUI.style.display = 'none'; // Hide presentation
     
     // Clean up old calibration dots if we want to restart
     document.querySelectorAll('.calib-dot').forEach(el => el.remove());
