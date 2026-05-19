@@ -1,16 +1,39 @@
 import { EyeTracker } from './EyeTracker.js';
 import { Pipeline } from './Pipeline.js';
+import { HeartRateSensor } from './HeartRateSensor.js';
 
 const dot = document.getElementById('gaze-dot');
 const status = document.getElementById('status-display');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
+const connectHrBtn = document.getElementById('connect-hr-btn');
 const calibOverlay = document.getElementById('calibration-overlay');
 const presentationUI = document.getElementById('presentation-ui');
 
 const tracker = new EyeTracker();
 const pipeline = new Pipeline();
+const hrSensor = new HeartRateSensor();
+
 let isCalibrated = false;
+let currentHRData = { bpm: 75, hrv: 60 }; // Default baseline fallback
+
+// Handle HR Sensor Connection
+connectHrBtn.addEventListener('click', async () => {
+    status.innerText = "Searching for HR Monitor...";
+    await hrSensor.connect();
+    
+    connectHrBtn.innerText = "HR Connected";
+    connectHrBtn.style.backgroundColor = "#2ed573"; // Turn green
+    connectHrBtn.disabled = true;
+
+    // Update global HR state and UI status when data arrives
+    hrSensor.onData = (data) => {
+        currentHRData = data;
+        if (!isCalibrated) {
+            status.innerText = `Ready. HR: ${data.bpm} bpm`;
+        }
+    };
+});
 
 // Callback to handle gaze data
 const handleGaze = (x, y) => {
@@ -21,8 +44,8 @@ const handleGaze = (x, y) => {
     dot.style.left = `${x}px`;
     dot.style.top = `${y}px`;
 
-    // Run the content selection pipeline
-    pipeline.process({x, y}, presentationUI);
+    // Run the content selection pipeline with BOTH live gaze and live HR
+    pipeline.process({x, y}, currentHRData, presentationUI);
 };
 
 // --- NEW: Calibration Logic ---

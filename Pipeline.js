@@ -5,12 +5,12 @@ export class Pipeline {
     }
 
     // 1. Data Acquisition: Polling ocular, physiological, kinematic, tactile, and audio data.
-    acquireData(gazeData) {
-        // In a real scenario, this would poll actual hardware/sensors.
-        // For this demo, we use the real ocular data (gaze) and simulate the others.
+    acquireData(gazeData, hrData) {
+        // We now use LIVE ocular (gaze) and LIVE physiological (Decathlon HR) data.
+        // We continue to simulate the other metrics until hardware is added for them.
         return {
             ocular: gazeData,
-            physiological: { hrv: Math.random() * 20 + 60 }, // Mock Heart Rate Variability
+            physiological: hrData, // { bpm, hrv } from the Decathlon armband
             kinematic: { mobility: Math.random() > 0.8 ? "Walking" : "Static" }, // Mock mobility
             tactile: { touchFrequency: Math.random() },
             audio: { voiceActivity: Math.random() } // Mock microphone input
@@ -30,6 +30,7 @@ export class Pipeline {
         return {
             gazeDeviation: ocularMetric,
             hrv: rawData.physiological.hrv,
+            bpm: rawData.physiological.bpm,
             mobilityState: rawData.kinematic.mobility,
             voiceActivityLevel: rawData.audio.voiceActivity
         };
@@ -48,6 +49,9 @@ export class Pipeline {
         
         // Rule 3: Moving while using the AR app significantly increases cognitive load
         if (features.mobilityState === "Walking") strainScore += 1.5;
+        
+        // Rule 4: Lower HRV usually correlates with higher cognitive strain/stress
+        if (features.hrv > 0 && features.hrv < 30) strainScore += 1.0; // HRV drops when stressed
 
         // Linguistic Variable Mapping
         if (strainScore >= 2.5) return "High";
@@ -56,7 +60,7 @@ export class Pipeline {
     }
 
     // 4. Context-Aware Presentation: Adaptive modality switching (Audio vs. Visual), Adjusting information density.
-    updatePresentation(strainLevel, uiElement) {
+    updatePresentation(strainLevel, features, uiElement) {
         // Throttle updates to avoid flickering UI in the demo
         if (this.lastUpdate && (Date.now() - this.lastUpdate < 1000)) return;
         this.lastUpdate = Date.now();
@@ -69,24 +73,24 @@ export class Pipeline {
         // Adapt UI based on current cognitive strain limits
         if (strainLevel === "High") {
             uiElement.className = 'presentation-panel strain-high';
-            title.innerText = "Cognitive Strain: HIGH";
+            title.innerText = `Cognitive Strain: HIGH (HR: ${features.bpm})`;
             content.innerText = "Modality Switch: Audio-only mode activated. Visual details minimized to prevent overload.";
         } else if (strainLevel === "Medium") {
             uiElement.className = 'presentation-panel strain-medium';
-            title.innerText = "Cognitive Strain: MEDIUM";
+            title.innerText = `Cognitive Strain: MEDIUM (HR: ${features.bpm})`;
             content.innerText = "Adjusting Density: Simplified visual layout. Presenting only key bullet points.";
         } else {
             uiElement.className = 'presentation-panel strain-low';
-            title.innerText = "Cognitive Strain: LOW";
+            title.innerText = `Cognitive Strain: LOW (HR: ${features.bpm})`;
             content.innerText = "Rich Multimodal Format: Full 3D model interaction, detailed historical text, and ambient audio active.";
         }
     }
 
     // Main pipeline execution flow
-    process(gazeData, uiElement) {
-        const rawData = this.acquireData(gazeData);
+    process(gazeData, hrData, uiElement) {
+        const rawData = this.acquireData(gazeData, hrData);
         const features = this.extractFeatures(rawData);
         const strainLevel = this.logicEngine(features);
-        this.updatePresentation(strainLevel, uiElement);
+        this.updatePresentation(strainLevel, features, uiElement);
     }
 }
