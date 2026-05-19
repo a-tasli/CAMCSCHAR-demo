@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Eye Tracking Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="app">
+        <div id="status-display">Ready. Click Start to calibrate.</div>
+        
+        <!-- NEW: Calibration Overlay -->
+        <div id="calibration-overlay">
+            <h2 id="calibration-instruction">Look at each red dot and click it.</h2>
+        </div>
+        
+        <div id="gaze-dot"></div>
+
+        <div class="controls">
+            <button id="start-btn">Start Tracking</button>
+            <button id="stop-btn" disabled>Stop</button>
+        </div>
+    </div>
+
+    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+    <script type="module" src="main.js"></script>
+</body>
+</html>

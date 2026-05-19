@@ -1,0 +1,93 @@
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: sans-serif;
+    background-color: #121212;
+    color: white;
+}
+
+#status-display {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    border-radius: 5px;
+}
+
+#gaze-dot {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #00ffcc;
+    border-radius: 50%;
+    box-shadow: 0 0 15px #00ffcc;
+    pointer-events: none; /* Allows clicking "through" the dot */
+    display: none;
+    z-index: 9999;
+    transition: transform 0.1s ease-out;
+}
+
+.controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+button {
+    padding: 10px 20px;
+    cursor: pointer;
+}
+/* FORCE WebGazer video to the top right */
+/* UPDATE your existing WebGazer video rule */
+#webgazerVideoContainer {
+    top: 10px !important;
+    left: auto !important;
+    right: 10px !important;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    z-index: 1000 !important;
+    
+    /* NEW ADDITIONS */
+    pointer-events: none !important; /* Allows mouse to ignore the video and click the dot */
+    transition: opacity 0.2s ease-in-out !important; /* Smooth fade effect */
+}
+
+/* Calibration Overlay Styles */
+#calibration-overlay {
+    display: none; /* Hidden by default */
+    position: fixed;
+    top: 0; 
+    left: 0; 
+    width: 100vw; 
+    height: 100vh;
+    background: rgba(18, 18, 18, 0.95);
+    z-index: 900;
+}
+
+#calibration-instruction {
+    text-align: center;
+    margin-top: 40vh;
+    font-size: 24px;
+    color: #fff;
+    pointer-events: none; /* So user doesn't accidentally click the text */
+}
+
+.calib-dot {
+    position: absolute;
+    width: 30px; 
+    height: 30px;
+    background: #ff4757;
+    border-radius: 50%;
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s, background-color 0.2s;
+}
+
+.calib-dot:active {
+    background: #2ed573;
+    transform: translate(-50%, -50%) scale(0.8);
+}
