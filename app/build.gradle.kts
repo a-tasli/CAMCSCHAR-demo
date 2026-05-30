@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "org.example"
     compileSdk = 35
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "org.example"

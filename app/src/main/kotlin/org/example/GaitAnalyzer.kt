@@ -13,6 +13,11 @@ data class GaitFeatures(
     val cognitiveLoadIndex: Double
 )
 
+data class GaitGraphData(
+    val values: List<Float>,
+    val steps: List<Int>
+)
+
 class GaitAnalyzer(private val sampleRate: Double = 100.0) {
 
     private val windowSize = (10.0 * sampleRate).toInt() // 10 second window as per article
@@ -26,6 +31,7 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
     private var x1 = 0.0; private var x2 = 0.0
     private var y1 = 0.0; private var y2 = 0.0
 
+    @Synchronized
     fun addAcceleration(x: Float, y: Float, z: Float, gravity: FloatArray?) {
         // Calculate linear vertical acceleration
         // In the article, they subtracted gravity. 
@@ -57,6 +63,14 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
         }
     }
 
+    @Synchronized
+    fun getGraphData(): GaitGraphData {
+        val dataCopy = accelerationData.toDoubleArray()
+        val valleys = detectValleys(dataCopy)
+        return GaitGraphData(dataCopy.map { it.toFloat() }, valleys)
+    }
+
+    @Synchronized
     fun analyze(): GaitFeatures? {
         if (accelerationData.size < windowSize) return null
 
