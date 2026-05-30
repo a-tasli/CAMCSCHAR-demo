@@ -23,10 +23,10 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
     private val windowSize = (10.0 * sampleRate).toInt() // 10 second window as per article
     private val accelerationData = mutableListOf<Double>()
     
-    // Butterworth filter coefficients (2nd order, 10Hz low-pass, 100Hz sample rate)
-    // Calculated using standard formulas
-    private val b = doubleArrayOf(0.067455, 0.13491, 0.067455)
-    private val a = doubleArrayOf(1.0, -1.14298, 0.41280)
+    // Butterworth filter coefficients (2nd order, 2.5Hz low-pass, 100Hz sample rate)
+    // Calculated using standard formulas to aggressively filter out hand shaking (3Hz+)
+    private val b = doubleArrayOf(0.0055427, 0.011085, 0.0055427)
+    private val a = doubleArrayOf(1.0, -1.77863, 0.80080)
     
     private var x1 = 0.0; private var x2 = 0.0
     private var y1 = 0.0; private var y2 = 0.0
@@ -131,6 +131,13 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
         // Calculate dynamic threshold
         val mean = data.average()
         val stdDev = sqrt(data.map { (it - mean).pow(2) }.average())
+        
+        // Energy gate: If the overall energy (variance) is too low, it's just handling noise, not walking.
+        // Walking typically produces a stdDev > 1.0 m/s^2 even at slow speeds.
+        if (stdDev < 0.8) {
+            return emptyList()
+        }
+
         // Require a minimum standard deviation to avoid triggering on noise when still
         val effectiveStdDev = max(stdDev, 0.5) 
         // Valley must be significantly below the mean
