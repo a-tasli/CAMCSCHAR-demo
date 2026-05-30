@@ -10,7 +10,12 @@ data class GaitFeatures(
     val stepTimeVariability: Double,
     val stepRegularity: Double,
     val strideRegularity: Double,
-    val cognitiveLoadIndex: Double
+    val hrValue: Int?,
+    val sdnn: Double,
+    val rmssd: Double,
+    val gaitLoadIndex: Double,
+    val hrLoadIndex: Double,
+    val combinedLoadIndex: Double
 )
 
 data class GaitGraphData(
@@ -31,27 +36,20 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
     private var x1 = 0.0; private var x2 = 0.0
     private var y1 = 0.0; private var y2 = 0.0
 
+    private val rrData = mutableListOf<Int>()
+    private val rrWindowSize = 60 // Roughly 60 seconds of data
+
     @Synchronized
     fun addAcceleration(x: Float, y: Float, z: Float, gravity: FloatArray?) {
-        // Calculate linear vertical acceleration
-        // In the article, they subtracted gravity. 
-        // We'll assume the phone is upright in a pocket or chest mount.
-        // Let's use the magnitude of acceleration minus gravity if gravity is known,
-        // or just use the z-axis if we assume orientation.
-        // The article used vertical acceleration.
-        
         val linearAccel = if (gravity != null) {
-            // Project acceleration onto gravity vector to get vertical component
             val dotProduct = x * gravity[0] + y * gravity[1] + z * gravity[2]
             val gravityMag = sqrt((gravity[0] * gravity[0] + gravity[1] * gravity[1] + gravity[2] * gravity[2]).toDouble())
             val verticalAccel = dotProduct / gravityMag
             verticalAccel - gravityMag
         } else {
-            // Fallback to Z-axis minus gravity approx
             z.toDouble() - 9.81
         }
 
-        // Apply low-pass filter
         val filtered = b[0] * linearAccel + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2
         
         x2 = x1; x1 = linearAccel
@@ -64,6 +62,14 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
     }
 
     @Synchronized
+    fun addRRIntervals(intervals: List<Int>) {
+        rrData.addAll(intervals)
+        if (rrData.size > rrWindowSize) {
+            rrData.subList(0, rrData.size - rrWindowSize).clear()
+        }
+    }
+
+    @Synchronized
     fun getGraphData(): GaitGraphData {
         val dataCopy = accelerationData.toDoubleArray()
         val valleys = detectValleys(dataCopy)
@@ -71,82 +77,100 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
     }
 
     @Synchronized
-    fun analyze(): GaitFeatures? {
+    fun analyze(currentHr: Int?): GaitFeatures? {
         if (accelerationData.size < windowSize) return null
 
         val data = accelerationData.toDoubleArray()
         
-        // 1. Detect Steps (Valleys)
         val valleys = detectValleys(data)
         if (valleys.size < 3) return null
 
-        // 2. Calculate Step Time and Variability
         val stepTimes = mutableListOf<Double>()
         for (i in 1 until valleys.size) {
-            stepTimes.add((valleys[i] - valleys[i - 1]) / sampleRate * 1000.0) // in ms
+            stepTimes.add((valleys[i] - valleys[i - 1]) / sampleRate * 1000.0)
         }
         val avgStepTime = stepTimes.average()
         val stepTimeVar = if (stepTimes.size > 1) {
             sqrt(stepTimes.map { (it - avgStepTime).pow(2) }.average())
         } else 0.0
 
-        // 3. Calculate Regularity via Autocorrelation
         val ac = calculateAutocorrelation(data)
         val p0 = ac[0]
-        
-        // Find peaks p1 (step) and p2 (stride)
-        // Expected step time is ~500-600ms, so lag is ~50-60 samples
         val p1Index = findPeakInRange(ac, (0.4 * sampleRate).toInt(), (0.8 * sampleRate).toInt())
         val p2Index = findPeakInRange(ac, (0.9 * sampleRate).toInt(), (1.4 * sampleRate).toInt())
-        
         val stepRegularity = if (p1Index != -1) ac[p1Index] / p0 else 0.0
         val strideRegularity = if (p2Index != -1) ac[p2Index] / p0 else 0.0
 
-        // 4. Estimate Cognitive Load Index
-        // Based on article: High load = High Step Time, High Variability, Low Regularity
-        // We'll normalize these relative to some baseline or just provide a raw index.
-        // Let's create a heuristic index (0-100)
-        // Step time baseline ~520ms, High ~565ms (+45ms)
-        // Step Var baseline ~22ms, High ~38ms (+16ms)
-        // Step Reg baseline ~0.87, High ~0.80 (-0.07)
-        
-        val stepTimeScore = min(100.0, max(0.0, (avgStepTime - 500.0) / 100.0 * 100.0))
-        val varScore = min(100.0, max(0.0, (stepTimeVar - 20.0) / 30.0 * 100.0))
-        val regScore = min(100.0, max(0.0, (0.9 - stepRegularity) / 0.2 * 100.0))
-        
-        val cognitiveLoad = (stepTimeScore + varScore + regScore) / 3.0
+        val sdnn = if (rrData.size > 5) {
+            val meanRR = rrData.average()
+            sqrt(rrData.map { (it - meanRR).pow(2) }.average())
+        } else 0.0
+
+        val rmssd = if (rrData.size > 5) {
+            val diffs = mutableListOf<Double>()
+            for (i in 1 until rrData.size) {
+                diffs.add((rrData[i] - rrData[i - 1]).toDouble().pow(2))
+            }
+            sqrt(diffs.average())
+        } else 0.0
+
+        val gaitStepTimeScore = min(100.0, max(0.0, (avgStepTime - 510.0) / 70.0 * 100.0))
+        val gaitVarScore = min(100.0, max(0.0, (stepTimeVar - 15.0) / 30.0 * 100.0))
+        val gaitRegScore = min(100.0, max(0.0, (0.90 - stepRegularity) / 0.20 * 100.0))
+        val gaitLoadIndex = (gaitStepTimeScore + gaitVarScore + gaitRegScore) / 3.0
+
+        val hrSdnnScore = min(100.0, max(0.0, (sdnn - 60.0) / 60.0 * 100.0))
+        val hrRmssdScore = min(100.0, max(0.0, (rmssd - 30.0) / 60.0 * 100.0))
+        val hrMeanScore = currentHr?.let { min(100.0, max(0.0, (it - 65.0) / 50.0 * 100.0)) } ?: 0.0
+        val hrLoadIndex = (hrSdnnScore + hrRmssdScore + hrMeanScore) / 3.0
+
+        val combinedLoadIndex = (gaitLoadIndex + hrLoadIndex) / 2.0
 
         return GaitFeatures(
             stepTime = avgStepTime,
             stepTimeVariability = stepTimeVar,
             stepRegularity = stepRegularity,
             strideRegularity = strideRegularity,
-            cognitiveLoadIndex = cognitiveLoad
+            hrValue = currentHr,
+            sdnn = sdnn,
+            rmssd = rmssd,
+            gaitLoadIndex = gaitLoadIndex,
+            hrLoadIndex = hrLoadIndex,
+            combinedLoadIndex = combinedLoadIndex
         )
     }
 
     private fun detectValleys(data: DoubleArray): List<Int> {
         val valleys = mutableListOf<Int>()
-        
-        // Calculate dynamic threshold
         val mean = data.average()
         val stdDev = sqrt(data.map { (it - mean).pow(2) }.average())
-        // Require a minimum standard deviation to avoid triggering on noise when still
-        val effectiveStdDev = max(stdDev, 0.5) 
-        // Valley must be significantly below the mean
-        val threshold = mean - (0.8 * effectiveStdDev)
+        val threshold = mean - (0.6 * max(stdDev, 0.5))
 
-        for (i in 1 until data.size - 1) {
+        for (i in 2 until data.size - 2) {
+            // Check for local minimum (valley)
             if (data[i] < data[i - 1] && data[i] < data[i + 1] && data[i] < threshold) {
-                valleys.add(i)
+                // M-Pattern check: Look for peaks on either side within ~300ms
+                val searchWindow = (0.3 * sampleRate).toInt()
+                val leftPeak = findPeakInRange(data, max(0, i - searchWindow), i - 1)
+                val rightPeak = findPeakInRange(data, i + 1, min(data.size - 1, i + searchWindow))
+                
+                if (leftPeak != -1 && rightPeak != -1) {
+                    val hLeft = data[leftPeak] - data[i]
+                    val hRight = data[rightPeak] - data[i]
+                    // Valley must be deep enough compared to surrounding peaks
+                    if (hLeft > 0.5 * stdDev && hRight > 0.5 * stdDev) {
+                        valleys.add(i)
+                    }
+                }
             }
         }
-        // Further filter valleys to ensure they are at least some distance apart (e.g. 300ms)
+
         val filteredValleys = mutableListOf<Int>()
         if (valleys.isNotEmpty()) {
             filteredValleys.add(valleys[0])
             for (i in 1 until valleys.size) {
-                if (valleys[i] - filteredValleys.last() > 0.3 * sampleRate) {
+                // Filter out valleys that are too close (min 350ms between steps)
+                if (valleys[i] - filteredValleys.last() > 0.35 * sampleRate) {
                     filteredValleys.add(valleys[i])
                 }
             }

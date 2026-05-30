@@ -106,12 +106,17 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var graphData by remember { mutableStateOf(GaitGraphData(emptyList(), emptyList())) }
     val hrValue by bleManager.heartRate.collectAsState()
+    val rrIntervals by bleManager.rrIntervals.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
     
+    LaunchedEffect(rrIntervals) {
+        analyzer.addRRIntervals(rrIntervals)
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             try {
-                features = analyzer.analyze()
+                features = analyzer.analyze(hrValue)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -149,11 +154,26 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            CognitiveLoadCard(features?.cognitiveLoadIndex ?: 0.0)
+            Text(
+                text = "Cognitive Load Estimations",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SmallLoadCard("Gait", features?.gaitLoadIndex ?: 0.0, Modifier.weight(1f))
+                SmallLoadCard("Heart", features?.hrLoadIndex ?: 0.0, Modifier.weight(1f))
+            }
+
+            CognitiveLoadCard("Combined Load", features?.combinedLoadIndex ?: 0.0)
 
             Spacer(modifier = Modifier.height(8.dp))
             
-            HeartRateCard(hrValue, bleState)
+            HeartRateCard(hrValue, bleState, features?.sdnn ?: 0.0)
 
             Spacer(modifier = Modifier.height(8.dp))
             
@@ -185,7 +205,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
 }
 
 @Composable
-fun HeartRateCard(hrValue: Int?, bleState: String) {
+fun HeartRateCard(hrValue: Int?, bleState: String, sdnn: Double) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -194,44 +214,66 @@ fun HeartRateCard(hrValue: Int?, bleState: String) {
             containerColor = Color(0xFFE91E63)
         )
     ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(text = "Heart Rate", fontSize = 14.sp, color = Color.White)
+                Text(
+                    text = hrValue?.let { "$it BPM" } ?: "-- BPM",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = "SDNN (HRV)", fontSize = 14.sp, color = Color.White)
+                Text(
+                    text = String.format(Locale.US, "%.1f ms", sdnn),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(text = bleState, fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f))
+            }
+        }
+    }
+}
+
+@Composable
+fun SmallLoadCard(label: String, load: Double, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.height(80.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = getLoadColor(load)
+        )
+    ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Text(text = label, fontSize = 12.sp, color = Color.White)
             Text(
-                text = "Heart Rate",
-                fontSize = 18.sp,
-                color = Color.White
-            )
-            Text(
-                text = hrValue?.let { "$it BPM" } ?: "-- BPM",
-                fontSize = 36.sp,
+                text = if (load < 1.0) "--" else String.format(Locale.US, "%.0f%%", load),
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
-            )
-            Text(
-                text = bleState,
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.8f)
             )
         }
     }
 }
 
 @Composable
-fun CognitiveLoadCard(load: Double) {
+fun CognitiveLoadCard(title: String, load: Double) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(150.dp),
+            .height(120.dp),
         colors = CardDefaults.cardColors(
-            containerColor = when {
-                load < 1.0 -> Color.Gray       // No data
-                load < 30 -> Color(0xFF4CAF50) // Low - Green
-                load < 60 -> Color(0xFFFFC107) // Medium - Amber
-                else -> Color(0xFFF44336)      // High - Red
-            }
+            containerColor = getLoadColor(load)
         )
     ) {
         Column(
@@ -240,28 +282,26 @@ fun CognitiveLoadCard(load: Double) {
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Cognitive Load",
-                fontSize = 20.sp,
+                text = title,
+                fontSize = 18.sp,
                 color = Color.White
             )
             Text(
                 text = if (load < 1.0) "Waiting..." else String.format(Locale.US, "%.1f%%", load),
-                fontSize = 44.sp,
+                fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
-            Text(
-                text = when {
-                    load < 1.0 -> "N/A"
-                    load < 30 -> "LOW"
-                    load < 60 -> "MEDIUM"
-                    else -> "HIGH"
-                },
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White
-            )
         }
+    }
+}
+
+fun getLoadColor(load: Double): Color {
+    return when {
+        load < 1.0 -> Color.Gray
+        load < 35 -> Color(0xFF4CAF50) // Low - Green
+        load < 65 -> Color(0xFFFFC107) // Medium - Amber
+        else -> Color(0xFFF44336)      // High - Red
     }
 }
 

@@ -24,6 +24,9 @@ class BleHeartRateManager(private val context: Context) {
     private val _heartRate = MutableStateFlow<Int?>(null)
     val heartRate: StateFlow<Int?> = _heartRate
 
+    private val _rrIntervals = MutableStateFlow<List<Int>>(emptyList())
+    val rrIntervals: StateFlow<List<Int>> = _rrIntervals
+
     private val _connectionState = MutableStateFlow("Disconnected")
     val connectionState: StateFlow<String> = _connectionState
 
@@ -108,6 +111,11 @@ class BleHeartRateManager(private val context: Context) {
             if (characteristic.uuid == HEART_RATE_MEASUREMENT_UUID) {
                 val hrValue = extractHeartRate(characteristic)
                 _heartRate.value = hrValue
+                
+                val rrValues = extractRRIntervals(characteristic)
+                if (rrValues.isNotEmpty()) {
+                    _rrIntervals.value = rrValues
+                }
             }
         }
     }
@@ -119,6 +127,28 @@ class BleHeartRateManager(private val context: Context) {
             BluetoothGattCharacteristic.FORMAT_UINT8
         }
         return characteristic.getIntValue(format, 1) ?: 0
+    }
+
+    private fun extractRRIntervals(characteristic: BluetoothGattCharacteristic): List<Int> {
+        val flags = characteristic.getIntValue(BluetoothGattCharacteristic.FORMAT_UINT8, 0) ?: 0
+        val hrFormat = flags and 0x01
+        val energyExpendedStatus = (flags shr 3) and 0x01
+        val rrStatus = (flags shr 4) and 0x01
+
+        if (rrStatus == 0) return emptyList()
+
+        var offset = if (hrFormat == 0) 2 else 3
+        if (energyExpendedStatus == 1) offset += 2
+
+        val rrIntervals = mutableListOf<Int>()
+        val data = characteristic.value ?: return emptyList()
+        
+        while (offset + 1 < data.size) {
+            val rr = characteristic.getIntValue(BluetoothGattCharacteristic.FORMAT_UINT16, offset) ?: break
+            rrIntervals.add(rr)
+            offset += 2
+        }
+        return rrIntervals
     }
 
     fun startScan() {
