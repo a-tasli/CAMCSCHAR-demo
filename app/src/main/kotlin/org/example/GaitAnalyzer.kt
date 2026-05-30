@@ -127,8 +127,17 @@ class GaitAnalyzer(private val sampleRate: Double = 100.0) {
 
     private fun detectValleys(data: DoubleArray): List<Int> {
         val valleys = mutableListOf<Int>()
+        
+        // Calculate dynamic threshold
+        val mean = data.average()
+        val stdDev = sqrt(data.map { (it - mean).pow(2) }.average())
+        // Require a minimum standard deviation to avoid triggering on noise when still
+        val effectiveStdDev = max(stdDev, 0.5) 
+        // Valley must be significantly below the mean
+        val threshold = mean - (0.8 * effectiveStdDev)
+
         for (i in 1 until data.size - 1) {
-            if (data[i] < data[i - 1] && data[i] < data[i + 1] && data[i] < -0.5) { // Threshold to avoid noise
+            if (data[i] < data[i - 1] && data[i] < data[i + 1] && data[i] < threshold) {
                 valleys.add(i)
             }
         }
