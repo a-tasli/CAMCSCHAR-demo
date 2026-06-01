@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
         
-        checkAndRequestBluetoothPermissions()
+        checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
@@ -53,24 +53,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkAndRequestBluetoothPermissions() {
-        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            )
+    private fun checkAndRequestPermissions() {
+        val permissionsList = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissionsList.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissionsList.add(Manifest.permission.BLUETOOTH_CONNECT)
         } else {
-            arrayOf(
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            )
+            permissionsList.add(Manifest.permission.BLUETOOTH)
+            permissionsList.add(Manifest.permission.BLUETOOTH_ADMIN)
         }
 
-        val missingPermissions = requiredPermissions.filter {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permissionsList.add(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+
+        val missingPermissions = permissionsList.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
@@ -104,7 +105,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
-    var graphData by remember { mutableStateOf(GaitGraphData(emptyList(), emptyList())) }
+    var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
     val rrIntervals by bleManager.rrIntervals.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
@@ -117,21 +118,11 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
         while (true) {
             try {
                 features = analyzer.analyze(hrValue)
+                stepIntervals = analyzer.getStepIntervals()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
             delay(1000) // Update every second
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            try {
-                graphData = analyzer.getGraphData()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            delay(33) // ~30 FPS update for the graph
         }
     }
 
@@ -177,7 +168,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
 
             Spacer(modifier = Modifier.height(8.dp))
             
-            LiveGaitGraph(graphData)
+            StepIntervalGraph(stepIntervals)
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -190,8 +181,6 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
 
             ParameterRow("Step Time", String.format(Locale.US, "%.0f ms", features?.stepTime ?: 0.0))
             ParameterRow("Step Variability", String.format(Locale.US, "%.1f ms", features?.stepTimeVariability ?: 0.0))
-            ParameterRow("Step Regularity", String.format(Locale.US, "%.2f", features?.stepRegularity ?: 0.0))
-            ParameterRow("Stride Regularity", String.format(Locale.US, "%.2f", features?.strideRegularity ?: 0.0))
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -200,6 +189,57 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
                 fontSize = 12.sp,
                 color = Color.Gray
             )
+        }
+    }
+}
+
+@Composable
+fun StepIntervalGraph(intervals: List<Float>) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Text("Step Intervals (ms)", fontSize = 12.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.height(4.dp))
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                if (intervals.isEmpty()) return@Canvas
+
+                val width = size.width
+                val height = size.height
+
+                val maxVal = maxOf(intervals.maxOrNull() ?: 1000f, 800f)
+                val minVal = minOf(intervals.minOrNull() ?: 300f, 400f)
+                val range = maxVal - minVal + 100f // Padding
+                
+                val points = intervals.mapIndexed { index, value ->
+                    val x = if (intervals.size > 1) index.toFloat() / (intervals.size - 1) * width else width / 2f
+                    val y = height - ((value - minVal + 50f) / range * height)
+                    Offset(x, y)
+                }
+
+                val path = Path()
+                points.forEachIndexed { index, offset ->
+                    if (index == 0) {
+                        path.moveTo(offset.x, offset.y)
+                    } else {
+                        path.lineTo(offset.x, offset.y)
+                    }
+                    drawCircle(
+                        color = Color.Red,
+                        radius = 4.dp.toPx(),
+                        center = offset
+                    )
+                }
+
+                drawPath(
+                    path = path,
+                    color = Color.Blue,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
         }
     }
 }
@@ -257,7 +297,7 @@ fun SmallLoadCard(label: String, load: Double, modifier: Modifier = Modifier) {
         ) {
             Text(text = label, fontSize = 12.sp, color = Color.White)
             Text(
-                text = if (load < 1.0) "--" else String.format(Locale.US, "%.0f%%", load),
+                text = if (load <= 0.0) "--" else String.format(Locale.US, "%.0f%%", load),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -287,7 +327,7 @@ fun CognitiveLoadCard(title: String, load: Double) {
                 color = Color.White
             )
             Text(
-                text = if (load < 1.0) "Waiting..." else String.format(Locale.US, "%.1f%%", load),
+                text = if (load <= 0.0) "Waiting..." else String.format(Locale.US, "%.1f%%", load),
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -298,7 +338,7 @@ fun CognitiveLoadCard(title: String, load: Double) {
 
 fun getLoadColor(load: Double): Color {
     return when {
-        load < 1.0 -> Color.Gray
+        load <= 0.0 -> Color.Gray
         load < 35 -> Color(0xFF4CAF50) // Low - Green
         load < 65 -> Color(0xFFFFC107) // Medium - Amber
         else -> Color(0xFFF44336)      // High - Red
@@ -313,78 +353,5 @@ fun ParameterRow(label: String, value: String) {
     ) {
         Text(text = label, fontWeight = FontWeight.Medium)
         Text(text = value, color = MaterialTheme.colorScheme.primary)
-    }
-}
-
-@Composable
-fun LiveGaitGraph(graphData: GaitGraphData) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(150.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
-    ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp)
-        ) {
-            val values = graphData.values
-            val steps = graphData.steps
-            if (values.isEmpty()) return@Canvas
-
-            val width = size.width
-            val height = size.height
-
-            val maxVal = values.maxOrNull() ?: 1f
-            val minVal = values.minOrNull() ?: -1f
-            
-            // To prevent jitter, set a minimum range
-            val range = maxOf(maxVal - minVal, 4f)
-            val center = minVal + range / 2f
-            
-            val yRange = range * 1.2f // Add some padding
-
-            val points = values.mapIndexed { index, value ->
-                val x = index.toFloat() / (values.size - 1) * width
-                // Invert Y so positive is up
-                val y = height / 2f - ((value - center) / yRange * height)
-                Offset(x, y)
-            }
-
-            val path = Path()
-            points.forEachIndexed { index, offset ->
-                if (index == 0) {
-                    path.moveTo(offset.x, offset.y)
-                } else {
-                    path.lineTo(offset.x, offset.y)
-                }
-            }
-
-            drawPath(
-                path = path,
-                color = Color.Blue,
-                style = Stroke(width = 2.dp.toPx())
-            )
-
-            // Draw steps clearly
-            steps.forEach { stepIndex ->
-                if (stepIndex in points.indices) {
-                    val stepPoint = points[stepIndex]
-                    drawCircle(
-                        color = Color.Red,
-                        radius = 4.dp.toPx(),
-                        center = stepPoint
-                    )
-                    // Draw a vertical line as well
-                    drawLine(
-                        color = Color.Red.copy(alpha = 0.5f),
-                        start = Offset(stepPoint.x, 0f),
-                        end = Offset(stepPoint.x, height),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-            }
-        }
     }
 }

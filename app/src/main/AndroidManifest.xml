@@ -3,6 +3,8 @@
 
     <!-- Required for SENSOR_DELAY_FASTEST on Android 12+ -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <!-- Required for Step Detector on Android 10+ -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <!-- Bluetooth permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
