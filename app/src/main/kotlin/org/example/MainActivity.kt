@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private val analyzer = GaitAnalyzer()
     private lateinit var sensorManager: GaitSensorManager
     private lateinit var bleManager: BleHeartRateManager
+    private lateinit var voiceManager: VoiceSensorManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -43,12 +44,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
+        voiceManager = VoiceSensorManager()
         
         checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
-                GaitApp(analyzer, bleManager)
+                GaitApp(analyzer, bleManager, voiceManager)
             }
         }
     }
@@ -56,7 +58,8 @@ class MainActivity : ComponentActivity() {
     private fun checkAndRequestPermissions() {
         val permissionsList = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.RECORD_AUDIO
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -86,6 +89,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         try {
             sensorManager.start()
+            voiceManager.start()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -94,6 +98,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         sensorManager.stop()
+        voiceManager.stop()
     }
     
     override fun onDestroy() {
@@ -103,21 +108,22 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
+fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
     val rrIntervals by bleManager.rrIntervals.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
+    val isSpeaking by voiceManager.isSpeaking.collectAsState()
     
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isSpeaking) {
         while (true) {
             try {
-                features = analyzer.analyze(hrValue)
+                features = analyzer.analyze(hrValue, isSpeaking)
                 stepIntervals = analyzer.getStepIntervals()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -161,6 +167,25 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager) {
             }
 
             CognitiveLoadCard("Combined Load", features?.combinedLoadIndex ?: 0.0)
+
+            // Voice Activity Indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Mic:", fontSize = 14.sp, color = Color.Gray)
+                Spacer(modifier = Modifier.width(8.dp))
+                Canvas(modifier = Modifier.size(12.dp)) {
+                    drawCircle(color = if (isSpeaking) Color.Green else Color.Gray)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isSpeaking) "Speech Detected (+15% Load)" else "Quiet", 
+                    fontSize = 14.sp, 
+                    color = if (isSpeaking) Color.DarkGray else Color.Gray
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
             

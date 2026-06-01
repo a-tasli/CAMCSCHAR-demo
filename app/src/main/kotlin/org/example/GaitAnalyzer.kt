@@ -57,7 +57,7 @@ class GaitAnalyzer {
     }
 
     @Synchronized
-    fun analyze(currentHr: Int?): GaitFeatures? {
+    fun analyze(currentHr: Int?, isSpeaking: Boolean = false): GaitFeatures? {
         val sdnn = if (rrData.size > 5) {
             val meanRR = rrData.average()
             sqrt(rrData.map { (it - meanRR).pow(2) }.average())
@@ -115,12 +115,17 @@ class GaitAnalyzer {
             }
         }
 
-        val combinedLoadIndex = if (gaitLoadIndex > 0.0 && hrLoadIndex > 0.0) {
+        var combinedLoadIndex = if (gaitLoadIndex > 0.0 && hrLoadIndex > 0.0) {
             (gaitLoadIndex + hrLoadIndex) / 2.0
         } else if (gaitLoadIndex > 0.0) {
             gaitLoadIndex
         } else {
             hrLoadIndex
+        }
+
+        // Apply a penalty if the user is engaged in conversation
+        if (isSpeaking && combinedLoadIndex > 0.0) {
+            combinedLoadIndex = min(100.0, combinedLoadIndex + 15.0)
         }
 
         return GaitFeatures(
