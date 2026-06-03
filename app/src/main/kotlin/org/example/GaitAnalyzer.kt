@@ -77,9 +77,11 @@ class GaitAnalyzer {
             val hrMeanScore = min(100.0, max(0.0, (currentHr - 70.0) / 40.0 * 100.0))
             
             if (rrData.size > 5) {
-                // HRV *decreases* under load (low SDNN/RMSSD = high stress)
-                val hrSdnnScore = min(100.0, max(0.0, (60.0 - sdnn) / 40.0 * 100.0))
-                val hrRmssdScore = min(100.0, max(0.0, (40.0 - rmssd) / 30.0 * 100.0))
+                // Following the project's literature: Cognitive load is POSITIVELY correlated with HRV.
+                // Higher SDNN/RMSSD = higher cognitive load.
+                // Baselines are adjusted so normal resting variability doesn't instantly equal 100% load.
+                val hrSdnnScore = min(100.0, max(0.0, (sdnn - 40.0) / 60.0 * 100.0)) // 40ms = 0%, 100ms = 100%
+                val hrRmssdScore = min(100.0, max(0.0, (rmssd - 20.0) / 60.0 * 100.0)) // 20ms = 0%, 80ms = 100%
                 hrLoadIndex = (hrSdnnScore + hrRmssdScore + hrMeanScore) / 3.0
             } else {
                 hrLoadIndex = hrMeanScore
