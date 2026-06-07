@@ -73,6 +73,7 @@ class VoiceSensorManager {
         val historySize = 10 // Rolling window of the last ~1.2 seconds
         val speechHistory = BooleanArray(historySize)
         var historyIndex = 0
+        var lastSpeechTimestamp = 0L
 
         while (isRecording) {
             val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
@@ -83,7 +84,17 @@ class VoiceSensorManager {
 
                 // Debouncing: If at least 3 out of the last 10 chunks are classified as speech
                 val speakingCount = speechHistory.count { it }
-                _isSpeaking.value = speakingCount >= 3
+                val currentlySpeaking = speakingCount >= 3
+                
+                if (currentlySpeaking) {
+                    lastSpeechTimestamp = System.currentTimeMillis()
+                    _isSpeaking.value = true
+                } else {
+                    // Only turn off the speaking state 3 seconds after the last detected speech
+                    if (System.currentTimeMillis() - lastSpeechTimestamp > 3000L) {
+                        _isSpeaking.value = false
+                    }
+                }
             }
         }
     }

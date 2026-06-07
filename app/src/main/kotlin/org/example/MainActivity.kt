@@ -230,6 +230,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
     
     val isPlaying by tourManager.isPlaying.collectAsState()
     val isDetailed by tourManager.isDetailed.collectAsState()
+    val isAutoMode by tourManager.isAutoMode.collectAsState()
     val currentLocation by tourManager.currentLocation.collectAsState()
     
     LaunchedEffect(rrIntervals) {
@@ -241,6 +242,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
             try {
                 features = analyzer.analyze(hrValue, isSpeaking)
                 stepIntervals = analyzer.getStepIntervals()
+                tourManager.updateLoadLevel(features?.loadLevel ?: "Waiting...")
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -266,20 +268,39 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F7FA))
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Tour Controls", fontWeight = FontWeight.Bold, color = Color.Black)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Tour Controls", fontWeight = FontWeight.Bold, color = Color.Black)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Auto Mode", fontSize = 14.sp, color = Color.Black)
+                            Spacer(Modifier.width(8.dp))
+                            Switch(
+                                checked = isAutoMode,
+                                onCheckedChange = { tourManager.toggleAutoMode() }
+                            )
+                        }
+                    }
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Button(onClick = { tourManager.togglePlayPause() }) {
+                        Button(
+                            onClick = { tourManager.togglePlayPause() },
+                            enabled = !isAutoMode
+                        ) {
                             Text(if (isPlaying) "Pause Tour" else "Play Tour")
                         }
                         
                         Button(
                             onClick = { tourManager.toggleScript() },
+                            enabled = !isAutoMode,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDetailed) Color(0xFF1976D2) else Color(0xFF388E3C)
+                                containerColor = if (isDetailed) Color(0xFF1976D2) else Color(0xFF388E3C),
+                                disabledContainerColor = Color.Gray
                             )
                         ) {
                             Text(if (isDetailed) "Detailed Script" else "Simple Script")

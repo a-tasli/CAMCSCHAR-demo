@@ -33,6 +33,11 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     
     private val _isDetailed = MutableStateFlow(true)
     val isDetailed: StateFlow<Boolean> = _isDetailed.asStateFlow()
+    
+    private val _isAutoMode = MutableStateFlow(false)
+    val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
+
+    private var currentLoadLevel = "Waiting..."
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -95,6 +100,24 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         return lines
     }
 
+    fun toggleAutoMode() {
+        _isAutoMode.value = !_isAutoMode.value
+    }
+
+    fun updateLoadLevel(level: String) {
+        val previousLevel = currentLoadLevel
+        currentLoadLevel = level
+        
+        if (_isAutoMode.value) {
+            if (previousLevel == "Overload" && level != "Overload" && level != "Waiting..." && !_isPlaying.value) {
+                if (currentIndex < maxIndex) {
+                    _isPlaying.value = true
+                    playCurrentIndex()
+                }
+            }
+        }
+    }
+
     fun togglePlayPause() {
         if (_isPlaying.value) {
             // By setting to false and NOT stopping the TTS, 
@@ -116,6 +139,17 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     private fun playCurrentIndex() {
+        if (_isAutoMode.value) {
+            when (currentLoadLevel) {
+                "Low", "Medium", "Waiting..." -> _isDetailed.value = true
+                "High" -> _isDetailed.value = false
+                "Overload" -> {
+                    _isPlaying.value = false
+                    return
+                }
+            }
+        }
+
         val script = if (_isDetailed.value) detailedScript else simplifiedScript
         if (currentIndex < script.size) {
             val line = script[currentIndex]
