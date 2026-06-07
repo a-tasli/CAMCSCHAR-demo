@@ -404,7 +404,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
             Spacer(modifier = Modifier.weight(1f))
 
             Text(
-                text = "Mount phone securely to chest for best results.",
+                text = "Demo Build",
                 fontSize = 12.sp,
                 color = Color.Gray
             )
