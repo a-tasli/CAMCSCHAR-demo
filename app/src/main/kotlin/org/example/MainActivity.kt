@@ -24,12 +24,16 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import java.util.*
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 class MainActivity : ComponentActivity() {
 
     private val analyzer = GaitAnalyzer()
     private lateinit var sensorManager: GaitSensorManager
     private lateinit var bleManager: BleHeartRateManager
     private lateinit var voiceManager: VoiceSensorManager
+    private lateinit var locationSensorManager: LocationSensorManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -37,6 +41,7 @@ class MainActivity : ComponentActivity() {
         val granted = permissions.entries.all { it.value }
         if (granted) {
             bleManager.startScan()
+            locationSensorManager.start()
         }
     }
 
@@ -45,12 +50,13 @@ class MainActivity : ComponentActivity() {
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
         voiceManager = VoiceSensorManager()
+        locationSensorManager = LocationSensorManager(this)
         
         checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
-                GaitApp(analyzer, bleManager, voiceManager)
+                GaitApp(analyzer, bleManager, voiceManager, locationSensorManager)
             }
         }
     }
@@ -82,6 +88,7 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(missingPermissions.toTypedArray())
         } else {
             bleManager.startScan()
+            locationSensorManager.start()
         }
     }
 
@@ -90,6 +97,7 @@ class MainActivity : ComponentActivity() {
         try {
             sensorManager.start()
             voiceManager.start()
+            locationSensorManager.start()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -99,6 +107,7 @@ class MainActivity : ComponentActivity() {
         super.onPause()
         sensorManager.stop()
         voiceManager.stop()
+        locationSensorManager.stop()
     }
     
     override fun onDestroy() {
@@ -108,13 +117,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager) {
+fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager, locationSensorManager: LocationSensorManager) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
     val rrIntervals by bleManager.rrIntervals.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
+    val location by locationSensorManager.location.collectAsState()
     
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
@@ -139,7 +149,8 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -206,6 +217,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
 
             ParameterRow("Step Time", String.format(Locale.US, "%.0f ms", features?.stepTime ?: 0.0))
             ParameterRow("Step Variability", String.format(Locale.US, "%.1f ms", features?.stepTimeVariability ?: 0.0))
+            ParameterRow("Location", location?.let { String.format(Locale.US, "%.5f, %.5f", it.latitude, it.longitude) } ?: "Waiting for GPS...")
 
             Spacer(modifier = Modifier.weight(1f))
 
