@@ -226,6 +226,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
     val rrIntervals by bleManager.rrIntervals.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
+    val isCooldown by voiceManager.isCooldown.collectAsState()
     val location by locationSensorManager.location.collectAsState()
     
     val isPlaying by tourManager.isPlaying.collectAsState()
@@ -242,7 +243,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
             try {
                 features = analyzer.analyze(hrValue, isSpeaking)
                 stepIntervals = analyzer.getStepIntervals()
-                tourManager.updateLoadLevel(features?.loadLevel ?: "Waiting...")
+                tourManager.updateContext(features?.loadLevel ?: "Waiting...", isSpeaking)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -369,7 +370,11 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isSpeaking) "Speech Detected (+1 Level)" else "Quiet", 
+                    text = when {
+                        isCooldown -> "Waiting 3s... (+1 Level)"
+                        isSpeaking -> "Speech Detected (+1 Level)"
+                        else -> "Quiet"
+                    }, 
                     fontSize = 14.sp, 
                     color = if (isSpeaking) Color.DarkGray else Color.Gray
                 )

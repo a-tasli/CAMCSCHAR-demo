@@ -19,6 +19,9 @@ class VoiceSensorManager {
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking
 
+    private val _isCooldown = MutableStateFlow(false)
+    val isCooldown: StateFlow<Boolean> = _isCooldown
+
     private val sampleRate = 8000
     private val bufferSize = 1024 // 128ms chunks
 
@@ -89,10 +92,16 @@ class VoiceSensorManager {
                 if (currentlySpeaking) {
                     lastSpeechTimestamp = System.currentTimeMillis()
                     _isSpeaking.value = true
+                    _isCooldown.value = false
                 } else {
-                    // Only turn off the speaking state 3 seconds after the last detected speech
-                    if (System.currentTimeMillis() - lastSpeechTimestamp > 3000L) {
-                        _isSpeaking.value = false
+                    if (_isSpeaking.value) {
+                        // Only turn off the speaking state 3 seconds after the last detected speech
+                        if (System.currentTimeMillis() - lastSpeechTimestamp > 3000L) {
+                            _isSpeaking.value = false
+                            _isCooldown.value = false
+                        } else {
+                            _isCooldown.value = true
+                        }
                     }
                 }
             }

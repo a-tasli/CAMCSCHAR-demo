@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -38,6 +40,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
 
     private var currentLoadLevel = "Waiting..."
+    private var delayJob: Job? = null
+    private var currentDelay = 0L
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -50,7 +54,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                     currentIndex++
                     if (_isPlaying.value) {
                         if (currentIndex < maxIndex) {
-                            playCurrentIndex()
+                            playCurrentIndexWithDelay()
                         } else {
                             _isPlaying.value = false
                             _history.value = _history.value + "Tour finished."
@@ -75,6 +79,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     fun selectLocation(location: String) {
         if (_isPlaying.value) {
+            delayJob?.cancel()
             ttsManager.stop()
             _isPlaying.value = false
         }
@@ -104,32 +109,61 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         _isAutoMode.value = !_isAutoMode.value
     }
 
-    fun updateLoadLevel(level: String) {
+    fun updateContext(level: String, isSpeaking: Boolean) {
         val previousLevel = currentLoadLevel
         currentLoadLevel = level
         
+        ttsManager.setDucking(isSpeaking)
+
         if (_isAutoMode.value) {
+            when (level) {
+                "Low", "Waiting..." -> {
+                    ttsManager.setSpeed(1.0f)
+                    currentDelay = 0L
+                    _isDetailed.value = true
+                }
+                "Medium" -> {
+                    ttsManager.setSpeed(0.75f)
+                    currentDelay = 1500L
+                    _isDetailed.value = true
+                }
+                "High" -> {
+                    ttsManager.setSpeed(0.75f)
+                    currentDelay = 1500L
+                    _isDetailed.value = false
+                }
+            }
+            
             if (previousLevel == "Overload" && level != "Overload" && level != "Waiting..." && !_isPlaying.value) {
                 if (currentIndex < maxIndex) {
                     _isPlaying.value = true
-                    playCurrentIndex()
+                    playCurrentIndexWithDelay()
                 }
             }
         }
     }
 
+    private fun playCurrentIndexWithDelay() {
+        delayJob?.cancel()
+        delayJob = scope.launch {
+            if (currentDelay > 0) {
+                delay(currentDelay)
+            }
+            playCurrentIndex()
+        }
+    }
+
     fun togglePlayPause() {
         if (_isPlaying.value) {
-            // By setting to false and NOT stopping the TTS, 
-            // the onUtteranceCompleted block will simply not play the next line.
             _isPlaying.value = false
+            delayJob?.cancel()
         } else {
             _isPlaying.value = true
             if (currentIndex < maxIndex) {
-                playCurrentIndex()
+                playCurrentIndexWithDelay()
             } else {
                 currentIndex = 0
-                playCurrentIndex()
+                playCurrentIndexWithDelay()
             }
         }
     }
