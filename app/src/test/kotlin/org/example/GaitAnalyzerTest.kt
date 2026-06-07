@@ -30,5 +30,6 @@ class GaitAnalyzerTest {
         println("Simulated Gait Features:")
         println("Step Time: ${features.stepTime} ms")
         println("Cognitive Load Index: ${features.combinedLoadIndex}")
+        println("Cognitive Load Level: ${features.loadLevel}")
     }
 }

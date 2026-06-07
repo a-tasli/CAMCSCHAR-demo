@@ -13,9 +13,10 @@ data class GaitFeatures(
     val hrValue: Int?,
     val sdnn: Double,
     val rmssd: Double,
-    val gaitLoadIndex: Double,
-    val hrLoadIndex: Double,
-    val combinedLoadIndex: Double
+    val gaitLoadIndex: Double?,
+    val hrLoadIndex: Double?,
+    val combinedLoadIndex: Double?,
+    val loadLevel: String
 )
 
 class GaitAnalyzer {
@@ -71,17 +72,16 @@ class GaitAnalyzer {
             sqrt(diffs.average())
         } else 0.0
 
-        var hrLoadIndex = 0.0
+        var hrLoadIndex: Double? = null
         if (currentHr != null) {
             // Heart rate increases under load
-            val hrMeanScore = min(100.0, max(0.0, (currentHr - 70.0) / 40.0 * 100.0))
+            val hrMeanScore = (currentHr - 70.0) / 40.0 * 100.0
             
             if (rrData.size > 5) {
                 // Following the project's literature: Cognitive load is POSITIVELY correlated with HRV.
                 // Higher SDNN/RMSSD = higher cognitive load.
-                // Baselines are adjusted so normal resting variability doesn't instantly equal 100% load.
-                val hrSdnnScore = min(100.0, max(0.0, (sdnn - 40.0) / 60.0 * 100.0)) // 40ms = 0%, 100ms = 100%
-                val hrRmssdScore = min(100.0, max(0.0, (rmssd - 20.0) / 60.0 * 100.0)) // 20ms = 0%, 80ms = 100%
+                val hrSdnnScore = (sdnn - 40.0) / 60.0 * 100.0
+                val hrRmssdScore = (rmssd - 20.0) / 60.0 * 100.0
                 hrLoadIndex = (hrSdnnScore + hrRmssdScore + hrMeanScore) / 3.0
             } else {
                 hrLoadIndex = hrMeanScore
@@ -90,7 +90,7 @@ class GaitAnalyzer {
 
         var avgStepTime = 0.0
         var stepTimeVar = 0.0
-        var gaitLoadIndex = 0.0
+        var gaitLoadIndex: Double? = null
 
         if (stepTimestamps.size >= 3) {
             val stepTimes = mutableListOf<Double>()
@@ -107,27 +107,39 @@ class GaitAnalyzer {
                     sqrt(stepTimes.map { (it - avgStepTime).pow(2) }.average())
                 } else 0.0
 
-                // Widen bounds: Paper averages are too tight for real-world variance.
-                // 500ms = 0%, 700ms = 100%
-                val gaitStepTimeScore = min(100.0, max(0.0, (avgStepTime - 500.0) / 200.0 * 100.0))
-                // 20ms = 0%, 70ms = 100%
-                val gaitVarScore = min(100.0, max(0.0, (stepTimeVar - 20.0) / 50.0 * 100.0))
+                val gaitStepTimeScore = (avgStepTime - 500.0) / 200.0 * 100.0
+                val gaitVarScore = (stepTimeVar - 20.0) / 50.0 * 100.0
                 
                 gaitLoadIndex = (gaitStepTimeScore + gaitVarScore) / 2.0
             }
         }
 
-        var combinedLoadIndex = if (gaitLoadIndex > 0.0 && hrLoadIndex > 0.0) {
+        val combinedLoadIndex = if (gaitLoadIndex != null && hrLoadIndex != null) {
             (gaitLoadIndex + hrLoadIndex) / 2.0
-        } else if (gaitLoadIndex > 0.0) {
+        } else if (gaitLoadIndex != null) {
             gaitLoadIndex
         } else {
             hrLoadIndex
         }
 
-        // Apply a penalty if the user is engaged in conversation
-        if (isSpeaking && combinedLoadIndex > 0.0) {
-            combinedLoadIndex = min(100.0, combinedLoadIndex + 15.0)
+        var finalLevel = "Waiting..."
+        if (combinedLoadIndex != null) {
+            val baseLevel = when {
+                combinedLoadIndex < 50.0 -> "Low"
+                combinedLoadIndex < 100.0 -> "Medium"
+                else -> "High"
+            }
+
+            finalLevel = baseLevel
+            // Adjust level if voice activity is detected
+            if (isSpeaking) {
+                finalLevel = when (baseLevel) {
+                    "Low" -> "Medium"
+                    "Medium" -> "High"
+                    "High" -> "Overload"
+                    else -> baseLevel
+                }
+            }
         }
 
         return GaitFeatures(
@@ -140,7 +152,8 @@ class GaitAnalyzer {
             rmssd = rmssd,
             gaitLoadIndex = gaitLoadIndex,
             hrLoadIndex = hrLoadIndex,
-            combinedLoadIndex = combinedLoadIndex
+            combinedLoadIndex = combinedLoadIndex,
+            loadLevel = finalLevel
         )
     }
 }

@@ -26,6 +26,9 @@ import java.util.*
 
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 
 class MainActivity : ComponentActivity() {
 
@@ -34,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var bleManager: BleHeartRateManager
     private lateinit var voiceManager: VoiceSensorManager
     private lateinit var locationSensorManager: LocationSensorManager
+    private lateinit var ttsManager: TTSManager
+    private lateinit var tourManager: TourManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -51,12 +56,14 @@ class MainActivity : ComponentActivity() {
         bleManager = BleHeartRateManager(this)
         voiceManager = VoiceSensorManager()
         locationSensorManager = LocationSensorManager(this)
+        ttsManager = TTSManager(this)
+        tourManager = TourManager(this, ttsManager)
         
         checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
-                GaitApp(analyzer, bleManager, voiceManager, locationSensorManager)
+                MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager)
             }
         }
     }
@@ -113,11 +120,106 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         bleManager.disconnect()
+        ttsManager.shutdown()
     }
 }
 
 @Composable
-fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager, locationSensorManager: LocationSensorManager) {
+fun MainAppScreen(
+    analyzer: GaitAnalyzer, 
+    bleManager: BleHeartRateManager, 
+    voiceManager: VoiceSensorManager, 
+    locationSensorManager: LocationSensorManager,
+    tourManager: TourManager
+) {
+    var selectedTabIndex by remember { mutableStateOf(0) }
+    val tabs = listOf("Tour", "Debug")
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(selectedTabIndex = selectedTabIndex) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = selectedTabIndex == index,
+                    onClick = { selectedTabIndex = index },
+                    text = { Text(title) }
+                )
+            }
+        }
+
+        when (selectedTabIndex) {
+            0 -> TourScreen(tourManager)
+            1 -> GaitApp(analyzer, bleManager, voiceManager, locationSensorManager, tourManager)
+        }
+    }
+}
+
+@Composable
+fun TourScreen(tourManager: TourManager) {
+    val history by tourManager.history.collectAsState()
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(history.size) {
+        if (history.isNotEmpty()) {
+            listState.animateScrollToItem(history.size - 1)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Top half: Image Box
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "Image Placeholder",
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            }
+        }
+
+        // Bottom half: Text Box
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0))
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                itemsIndexed(history) { index, text ->
+                    val isLast = index == history.size - 1
+                    val textColor = if (isLast) Color.Black else Color.DarkGray
+
+                    Text(
+                        text = text,
+                        fontSize = 18.sp,
+                        fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                        color = textColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager, locationSensorManager: LocationSensorManager, tourManager: TourManager) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
@@ -125,6 +227,10 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
     val bleState by bleManager.connectionState.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
     val location by locationSensorManager.location.collectAsState()
+    
+    val isPlaying by tourManager.isPlaying.collectAsState()
+    val isDetailed by tourManager.isDetailed.collectAsState()
+    val currentLocation by tourManager.currentLocation.collectAsState()
     
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
@@ -154,6 +260,56 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Tour Controls
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F7FA))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Tour Controls", fontWeight = FontWeight.Bold, color = Color.Black)
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = { tourManager.togglePlayPause() }) {
+                            Text(if (isPlaying) "Pause Tour" else "Play Tour")
+                        }
+                        
+                        Button(
+                            onClick = { tourManager.toggleScript() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDetailed) Color(0xFF1976D2) else Color(0xFF388E3C)
+                            )
+                        ) {
+                            Text(if (isDetailed) "Detailed Script" else "Simple Script")
+                        }
+                    }
+
+                    // Location selector
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        tourManager.availableLocations.forEach { loc ->
+                            val isSelected = currentLocation == loc
+                            Button(
+                                onClick = { tourManager.selectLocation(loc) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) Color(0xFF00796B) else Color.Gray
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = loc.replace("_", " ").split(" ").joinToString(" ") { it.capitalize() },
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Text(
                 text = "Gait & Heart Rate Monitor",
                 fontSize = 22.sp,
@@ -177,7 +333,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                 SmallLoadCard("Heart", features?.hrLoadIndex ?: 0.0, Modifier.weight(1f))
             }
 
-            CognitiveLoadCard("Combined Load", features?.combinedLoadIndex ?: 0.0)
+            CognitiveLoadCard("Combined Load", features?.combinedLoadIndex, features?.loadLevel ?: "Waiting...")
 
             // Voice Activity Indicator
             Row(
@@ -192,7 +348,7 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isSpeaking) "Speech Detected (+15% Load)" else "Quiet", 
+                    text = if (isSpeaking) "Speech Detected (+1 Level)" else "Quiet", 
                     fontSize = 14.sp, 
                     color = if (isSpeaking) Color.DarkGray else Color.Gray
                 )
@@ -320,11 +476,12 @@ fun HeartRateCard(hrValue: Int?, bleState: String, sdnn: Double) {
 }
 
 @Composable
-fun SmallLoadCard(label: String, load: Double, modifier: Modifier = Modifier) {
+fun SmallLoadCard(label: String, load: Double?, modifier: Modifier = Modifier) {
+    val color = if (load == null) Color.Gray else getNumericLoadColor(load)
     Card(
         modifier = modifier.height(80.dp),
         colors = CardDefaults.cardColors(
-            containerColor = getLoadColor(load)
+            containerColor = color
         )
     ) {
         Column(
@@ -334,7 +491,7 @@ fun SmallLoadCard(label: String, load: Double, modifier: Modifier = Modifier) {
         ) {
             Text(text = label, fontSize = 12.sp, color = Color.White)
             Text(
-                text = if (load <= 0.0) "--" else String.format(Locale.US, "%.0f%%", load),
+                text = if (load == null) "--" else String.format(Locale.US, "%.1f", load),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -344,13 +501,13 @@ fun SmallLoadCard(label: String, load: Double, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun CognitiveLoadCard(title: String, load: Double) {
+fun CognitiveLoadCard(title: String, load: Double?, level: String) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(120.dp),
         colors = CardDefaults.cardColors(
-            containerColor = getLoadColor(load)
+            containerColor = getLevelColor(level)
         )
     ) {
         Column(
@@ -364,21 +521,38 @@ fun CognitiveLoadCard(title: String, load: Double) {
                 color = Color.White
             )
             Text(
-                text = if (load <= 0.0) "Waiting..." else String.format(Locale.US, "%.1f%%", load),
+                text = if (load == null) "Waiting..." else String.format(Locale.US, "%.1f", load),
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+            if (load != null) {
+                Text(
+                    text = level,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+            }
         }
     }
 }
 
-fun getLoadColor(load: Double): Color {
+fun getNumericLoadColor(load: Double): Color {
     return when {
-        load <= 0.0 -> Color.Gray
-        load < 35 -> Color(0xFF4CAF50) // Low - Green
-        load < 65 -> Color(0xFFFFC107) // Medium - Amber
+        load < 50.0 -> Color(0xFF4CAF50) // Low - Green
+        load < 100.0 -> Color(0xFFFFC107) // Medium - Amber
         else -> Color(0xFFF44336)      // High - Red
+    }
+}
+
+fun getLevelColor(level: String): Color {
+    return when (level) {
+        "Low" -> Color(0xFF4CAF50)
+        "Medium" -> Color(0xFFFFC107)
+        "High" -> Color(0xFFF44336)
+        "Overload" -> Color(0xFF9C27B0) // Purple for Overload
+        else -> Color.Gray
     }
 }
 
