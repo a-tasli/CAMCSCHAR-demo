@@ -124,10 +124,10 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         try {
             val inputStream = context.assets.open(assetPath)
             val reader = BufferedReader(InputStreamReader(inputStream))
+            var index = 1
             reader.forEachLine { line ->
-                val match = Regex("\\[(\\d+)\\]\\s*(.*)").find(line)
-                if (match != null) {
-                    lines.add(ScriptLine(match.groupValues[1].toInt(), match.groupValues[2]))
+                if (line.isNotBlank()) {
+                    lines.add(ScriptLine(index++, line.trim()))
                 }
             }
             reader.close()
