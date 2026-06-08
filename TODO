@@ -1,4 +1,6 @@
-- Add GPS with waterline
++ Add GPS with waterline
+
+- Check if it runs in the background
 
 - Add actual multimodality (images)
     - finding images

@@ -229,10 +229,17 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
     val isCooldown by voiceManager.isCooldown.collectAsState()
     val location by locationSensorManager.location.collectAsState()
     
+    LaunchedEffect(location) {
+        location?.let { loc ->
+            tourManager.checkLocation(loc.latitude, loc.longitude)
+        }
+    }
+
     val isPlaying by tourManager.isPlaying.collectAsState()
     val isDetailed by tourManager.isDetailed.collectAsState()
     val isAutoMode by tourManager.isAutoMode.collectAsState()
     val currentLocation by tourManager.currentLocation.collectAsState()
+    val currentArea by tourManager.currentArea.collectAsState()
     
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
@@ -323,12 +330,20 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = loc.replace("_", " ").split(" ").joinToString(" ") { it.capitalize() },
+                                    text = loc.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } },
                                     fontSize = 11.sp
                                 )
                             }
                         }
                     }
+
+                    Text(
+                        text = "Current POI Area: ${if (currentArea == "None") "None" else currentArea.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.DarkGray,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
+                    )
                 }
             }
 
