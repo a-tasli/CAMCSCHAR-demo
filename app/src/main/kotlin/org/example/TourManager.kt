@@ -49,19 +49,21 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    data class POI(val id: Int, val name: String, val lat: Double, val lon: Double, val radiusDeg: Double)
+    data class POI(val id: Int, val name: String, val lat: Double, val lon: Double, val radiusMeters: Double)
     
     private val pois = listOf(
-        POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 0.0012),
-        POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 0.0012),
-        POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 0.0012)
+        POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 80.0),
+        POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 60.0),
+        POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 80.0)
     )
 
     fun checkLocation(lat: Double, lon: Double) {
         var foundPoi: String? = null
+        val results = FloatArray(1)
         for (poi in pois) {
-            val dist = hypot(lat - poi.lat, lon - poi.lon)
-            if (dist <= poi.radiusDeg) {
+            android.location.Location.distanceBetween(lat, lon, poi.lat, poi.lon, results)
+            val distMeters = results[0]
+            if (distMeters <= poi.radiusMeters) {
                 foundPoi = poi.name
                 if (_currentLocation.value != poi.name) {
                     val wasPlaying = _isPlaying.value

@@ -30,6 +30,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 
+import org.osmdroid.config.Configuration
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
+import androidx.compose.ui.viewinterop.AndroidView
+
 class MainActivity : ComponentActivity() {
 
     private val analyzer = GaitAnalyzer()
@@ -39,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var locationSensorManager: LocationSensorManager
     private lateinit var ttsManager: TTSManager
     private lateinit var tourManager: TourManager
+    private lateinit var blinkSensorManager: BlinkSensorManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -47,23 +55,28 @@ class MainActivity : ComponentActivity() {
         if (granted) {
             bleManager.startScan()
             locationSensorManager.start()
+            blinkSensorManager.start(this)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        Configuration.getInstance().userAgentValue = packageName
+        
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
         voiceManager = VoiceSensorManager()
         locationSensorManager = LocationSensorManager(this)
         ttsManager = TTSManager(this)
         tourManager = TourManager(this, ttsManager)
+        blinkSensorManager = BlinkSensorManager(this)
         
         checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
-                MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager)
+                MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
             }
         }
     }
@@ -72,7 +85,8 @@ class MainActivity : ComponentActivity() {
         val permissionsList = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.RECORD_AUDIO
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -96,6 +110,7 @@ class MainActivity : ComponentActivity() {
         } else {
             bleManager.startScan()
             locationSensorManager.start()
+            blinkSensorManager.start(this)
         }
     }
 
@@ -121,6 +136,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         bleManager.disconnect()
         ttsManager.shutdown()
+        blinkSensorManager.stop()
     }
 }
 
@@ -130,10 +146,12 @@ fun MainAppScreen(
     bleManager: BleHeartRateManager, 
     voiceManager: VoiceSensorManager, 
     locationSensorManager: LocationSensorManager,
-    tourManager: TourManager
+    tourManager: TourManager,
+    blinkSensorManager: BlinkSensorManager
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Tour", "Debug")
+    val location by locationSensorManager.location.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = selectedTabIndex) {
@@ -147,16 +165,28 @@ fun MainAppScreen(
         }
 
         when (selectedTabIndex) {
-            0 -> TourScreen(tourManager)
-            1 -> GaitApp(analyzer, bleManager, voiceManager, locationSensorManager, tourManager)
+            0 -> TourScreen(tourManager, location)
+            1 -> GaitApp(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
         }
     }
 }
 
 @Composable
-fun TourScreen(tourManager: TourManager) {
+fun TourScreen(tourManager: TourManager, location: android.location.Location?) {
     val history by tourManager.history.collectAsState()
+    val currentArea by tourManager.currentArea.collectAsState()
     val listState = rememberLazyListState()
+
+    var showMap by remember { mutableStateOf(currentArea == "None") }
+
+    LaunchedEffect(currentArea) {
+        if (currentArea == "None") {
+            delay(5000L) // 5 seconds debounce
+            showMap = true
+        } else {
+            showMap = false
+        }
+    }
 
     LaunchedEffect(history.size) {
         if (history.isNotEmpty()) {
@@ -171,20 +201,24 @@ fun TourScreen(tourManager: TourManager) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Top half: Image Box
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
-        ) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "Image Placeholder",
-                    color = Color.Gray,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
+        // Top half: Image Box or Map
+        if (showMap) {
+            OsmMapPreview(location = location, modifier = Modifier.fillMaxWidth().weight(1f))
+        } else {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Image Placeholder",
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
+                }
             }
         }
 
@@ -219,7 +253,7 @@ fun TourScreen(tourManager: TourManager) {
 }
 
 @Composable
-fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager, locationSensorManager: LocationSensorManager, tourManager: TourManager) {
+fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager, locationSensorManager: LocationSensorManager, tourManager: TourManager, blinkSensorManager: BlinkSensorManager) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
@@ -228,6 +262,9 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
     val isCooldown by voiceManager.isCooldown.collectAsState()
     val location by locationSensorManager.location.collectAsState()
+    val blinksLast30s by blinkSensorManager.blinksLast30s.collectAsState()
+    val leftEyeProb by blinkSensorManager.leftEyeProb.collectAsState()
+    val rightEyeProb by blinkSensorManager.rightEyeProb.collectAsState()
     
     LaunchedEffect(location) {
         location?.let { loc ->
@@ -415,6 +452,14 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
             ParameterRow("Step Time", String.format(Locale.US, "%.0f ms", features?.stepTime ?: 0.0))
             ParameterRow("Step Variability", String.format(Locale.US, "%.1f ms", features?.stepTimeVariability ?: 0.0))
             ParameterRow("Location", location?.let { String.format(Locale.US, "%.5f, %.5f", it.latitude, it.longitude) } ?: "Waiting for GPS...")
+            ParameterRow("Left Eye Open Prob", leftEyeProb?.let { String.format(Locale.US, "%.2f", it) } ?: "--")
+            ParameterRow("Right Eye Open Prob", rightEyeProb?.let { String.format(Locale.US, "%.2f", it) } ?: "--")
+            ParameterRow("Blinks (Last 30s)", "$blinksLast30s")
+            ParameterRow("Blink Rate (/sec)", String.format(Locale.US, "%.2f", blinksLast30s / 30.0f))
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OsmMapPreview(location)
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -424,6 +469,71 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                 color = Color.Gray
             )
         }
+    }
+}
+
+@Composable
+fun OsmMapPreview(location: android.location.Location?, modifier: Modifier = Modifier.fillMaxWidth().height(250.dp)) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                MapView(context).apply {
+                    setOnTouchListener { v, event ->
+                        when (event.action) {
+                            android.view.MotionEvent.ACTION_DOWN -> v.parent.requestDisallowInterceptTouchEvent(true)
+                            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> v.parent.requestDisallowInterceptTouchEvent(false)
+                        }
+                        false
+                    }
+                    setMultiTouchControls(true)
+                    controller.setZoom(16.0)
+                    
+                    val pois = listOf(
+                        TourManager.POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 80.0),
+                        TourManager.POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 60.0),
+                        TourManager.POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 80.0)
+                    )
+                    
+                    for (poi in pois) {
+                        val center = GeoPoint(poi.lat, poi.lon)
+                        val marker = Marker(this)
+                        marker.position = center
+                        marker.title = poi.name
+                        overlays.add(marker)
+                        
+                        val circle = Polygon(this)
+                        val pts = Polygon.pointsAsCircle(center, poi.radiusMeters)
+                        circle.points = pts
+                        circle.fillColor = 0x220000FF
+                        circle.strokeColor = 0x880000FF.toInt()
+                        circle.strokeWidth = 2.0f
+                        overlays.add(circle)
+                    }
+                    
+                    val centerPt = GeoPoint(40.892, 29.377)
+                    controller.setCenter(centerPt)
+                }
+            },
+            update = { mapView ->
+                if (location != null) {
+                    val userPt = GeoPoint(location.latitude, location.longitude)
+                    
+                    mapView.overlays.removeAll { it is Marker && it.title == "User" }
+                    
+                    val userMarker = Marker(mapView)
+                    userMarker.position = userPt
+                    userMarker.title = "User"
+                    userMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_mylocation)
+                    mapView.overlays.add(userMarker)
+                    
+                    mapView.invalidate()
+                }
+            }
+        )
     }
 }
 

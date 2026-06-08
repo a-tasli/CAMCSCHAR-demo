@@ -8,6 +8,11 @@
     <!-- Required for FFT Voice Detection -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Camera permissions for Blink Detection -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" />
+    <uses-feature android:name="android.hardware.camera.front" />
+
     <!-- Bluetooth permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
