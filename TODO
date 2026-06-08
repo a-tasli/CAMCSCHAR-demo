@@ -4,11 +4,11 @@
 - Check if it runs in the background
 
 - Add actual multimodality (images)
-    - finding images
+    + finding images
     - multimodal content selection
 
-- Fact check the content, change accordingly
-    - The memorial is an actual memorial not a lake
++ Fact check the content, change accordingly
+    + The memorial is an actual memorial not a lake
 
 - Add logging for everything
 
