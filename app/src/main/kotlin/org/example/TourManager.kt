@@ -63,7 +63,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         for (poi in pois) {
             android.location.Location.distanceBetween(lat, lon, poi.lat, poi.lon, results)
             val distMeters = results[0]
-            if (distMeters <= poi.radiusMeters) {
+            val effectiveRadius = if (_currentArea.value == poi.name) poi.radiusMeters + 5.0 else poi.radiusMeters
+            if (distMeters <= effectiveRadius) {
                 foundPoi = poi.name
                 if (_currentLocation.value != poi.name) {
                     val wasPlaying = _isPlaying.value

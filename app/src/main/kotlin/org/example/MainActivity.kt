@@ -152,6 +152,18 @@ fun MainAppScreen(
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Tour", "Debug")
     val location by locationSensorManager.location.collectAsState()
+    
+    var isManualGpsMode by remember { mutableStateOf(false) }
+    var manualLocation by remember { mutableStateOf<GeoPoint?>(null) }
+
+    val effectiveLat = if (isManualGpsMode) manualLocation?.latitude else location?.latitude
+    val effectiveLon = if (isManualGpsMode) manualLocation?.longitude else location?.longitude
+
+    LaunchedEffect(effectiveLat, effectiveLon) {
+        if (effectiveLat != null && effectiveLon != null) {
+            tourManager.checkLocation(effectiveLat, effectiveLon)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = selectedTabIndex) {
@@ -165,28 +177,45 @@ fun MainAppScreen(
         }
 
         when (selectedTabIndex) {
-            0 -> TourScreen(tourManager, location)
-            1 -> GaitApp(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
+            0 -> TourScreen(
+                tourManager = tourManager, 
+                location = location,
+                isManualGpsMode = isManualGpsMode,
+                manualLocation = manualLocation
+            )
+            1 -> GaitApp(
+                analyzer = analyzer, 
+                bleManager = bleManager, 
+                voiceManager = voiceManager, 
+                locationSensorManager = locationSensorManager, 
+                tourManager = tourManager, 
+                blinkSensorManager = blinkSensorManager,
+                isManualGpsMode = isManualGpsMode,
+                onManualGpsModeChange = { 
+                    isManualGpsMode = it 
+                    if (it && manualLocation == null) {
+                        manualLocation = location?.let { loc -> GeoPoint(loc.latitude, loc.longitude) } ?: GeoPoint(40.892, 29.377)
+                    }
+                },
+                manualLocation = manualLocation,
+                onManualLocationChange = { manualLocation = it }
+            )
         }
     }
 }
 
 @Composable
-fun TourScreen(tourManager: TourManager, location: android.location.Location?) {
+fun TourScreen(
+    tourManager: TourManager, 
+    location: android.location.Location?,
+    isManualGpsMode: Boolean = false,
+    manualLocation: GeoPoint? = null
+) {
     val history by tourManager.history.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
     val listState = rememberLazyListState()
 
-    var showMap by remember { mutableStateOf(currentArea == "None") }
-
-    LaunchedEffect(currentArea) {
-        if (currentArea == "None") {
-            delay(5000L) // 5 seconds debounce
-            showMap = true
-        } else {
-            showMap = false
-        }
-    }
+    val showMap = currentArea == "None"
 
     LaunchedEffect(history.size) {
         if (history.isNotEmpty()) {
@@ -203,7 +232,12 @@ fun TourScreen(tourManager: TourManager, location: android.location.Location?) {
     ) {
         // Top half: Image Box or Map
         if (showMap) {
-            OsmMapPreview(location = location, modifier = Modifier.fillMaxWidth().weight(1f))
+            OsmMapPreview(
+                location = location, 
+                isManualGpsMode = isManualGpsMode,
+                manualLocation = manualLocation,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
         } else {
             Card(
                 modifier = Modifier
@@ -253,7 +287,18 @@ fun TourScreen(tourManager: TourManager, location: android.location.Location?) {
 }
 
 @Composable
-fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManager: VoiceSensorManager, locationSensorManager: LocationSensorManager, tourManager: TourManager, blinkSensorManager: BlinkSensorManager) {
+fun GaitApp(
+    analyzer: GaitAnalyzer, 
+    bleManager: BleHeartRateManager, 
+    voiceManager: VoiceSensorManager, 
+    locationSensorManager: LocationSensorManager, 
+    tourManager: TourManager, 
+    blinkSensorManager: BlinkSensorManager,
+    isManualGpsMode: Boolean = false,
+    onManualGpsModeChange: (Boolean) -> Unit = {},
+    manualLocation: GeoPoint? = null,
+    onManualLocationChange: ((GeoPoint) -> Unit)? = null
+) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
@@ -265,12 +310,6 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
     val blinksLast30s by blinkSensorManager.blinksLast30s.collectAsState()
     val leftEyeProb by blinkSensorManager.leftEyeProb.collectAsState()
     val rightEyeProb by blinkSensorManager.rightEyeProb.collectAsState()
-    
-    LaunchedEffect(location) {
-        location?.let { loc ->
-            tourManager.checkLocation(loc.latitude, loc.longitude)
-        }
-    }
 
     val isPlaying by tourManager.isPlaying.collectAsState()
     val isDetailed by tourManager.isDetailed.collectAsState()
@@ -361,8 +400,10 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                             val isSelected = currentLocation == loc
                             Button(
                                 onClick = { tourManager.selectLocation(loc) },
+                                enabled = !isAutoMode,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSelected) Color(0xFF00796B) else Color.Gray
+                                    containerColor = if (isSelected) Color(0xFF00796B) else Color.Gray,
+                                    disabledContainerColor = if (isSelected) Color(0x8800796B) else Color.LightGray
                                 ),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
@@ -372,6 +413,18 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
                                 )
                             }
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Manual GPS Mode", fontSize = 14.sp, color = Color.Black)
+                        Switch(
+                            checked = isManualGpsMode,
+                            onCheckedChange = onManualGpsModeChange
+                        )
                     }
 
                     Text(
@@ -459,7 +512,12 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            OsmMapPreview(location)
+            OsmMapPreview(
+                location = location,
+                isManualGpsMode = isManualGpsMode,
+                manualLocation = manualLocation,
+                onManualLocationChange = onManualLocationChange
+            )
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -473,7 +531,13 @@ fun GaitApp(analyzer: GaitAnalyzer, bleManager: BleHeartRateManager, voiceManage
 }
 
 @Composable
-fun OsmMapPreview(location: android.location.Location?, modifier: Modifier = Modifier.fillMaxWidth().height(250.dp)) {
+fun OsmMapPreview(
+    location: android.location.Location?,
+    isManualGpsMode: Boolean = false,
+    manualLocation: GeoPoint? = null,
+    onManualLocationChange: ((GeoPoint) -> Unit)? = null,
+    modifier: Modifier = Modifier.fillMaxWidth().height(250.dp)
+) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -519,10 +583,25 @@ fun OsmMapPreview(location: android.location.Location?, modifier: Modifier = Mod
                 }
             },
             update = { mapView ->
-                if (location != null) {
+                mapView.overlays.removeAll { it is Marker && (it.title == "User" || it.title == "Manual") }
+                
+                if (isManualGpsMode && manualLocation != null) {
+                    val manualMarker = Marker(mapView)
+                    manualMarker.position = manualLocation
+                    manualMarker.title = "Manual"
+                    manualMarker.isDraggable = true
+                    manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
+                    manualMarker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                        override fun onMarkerDragStart(marker: Marker) {}
+                        override fun onMarkerDrag(marker: Marker) {}
+                        override fun onMarkerDragEnd(marker: Marker) {
+                            onManualLocationChange?.invoke(marker.position)
+                        }
+                    })
+                    mapView.overlays.add(manualMarker)
+                    mapView.invalidate()
+                } else if (!isManualGpsMode && location != null) {
                     val userPt = GeoPoint(location.latitude, location.longitude)
-                    
-                    mapView.overlays.removeAll { it is Marker && it.title == "User" }
                     
                     val userMarker = Marker(mapView)
                     userMarker.position = userPt
