@@ -211,6 +211,7 @@ fun TourScreen(
 ) {
     val history by tourManager.history.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
+    val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     val listState = rememberLazyListState()
 
     val showMap = currentArea == "None"
@@ -235,6 +236,8 @@ fun TourScreen(
                 isManualGpsMode = isManualGpsMode,
                 manualLat = manualLat,
                 manualLon = manualLon,
+                resetTrigger = resetTrigger,
+                onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
         } else {
@@ -305,7 +308,6 @@ fun GaitApp(
     val bleState by bleManager.connectionState.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
     val isCooldown by voiceManager.isCooldown.collectAsState()
-    val location by locationSensorManager.location.collectAsState()
     val blinksLast30s by blinkSensorManager.blinksLast30s.collectAsState()
     val leftEyeProb by blinkSensorManager.leftEyeProb.collectAsState()
     val rightEyeProb by blinkSensorManager.rightEyeProb.collectAsState()
@@ -315,6 +317,7 @@ fun GaitApp(
     val isAutoMode by tourManager.isAutoMode.collectAsState()
     val currentLocation by tourManager.currentLocation.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
+    val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
@@ -420,10 +423,20 @@ fun GaitApp(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Manual GPS Mode", fontSize = 14.sp, color = Color.Black)
-                        Switch(
-                            checked = isManualGpsMode,
-                            onCheckedChange = { tourManager.setManualGpsMode(it, location?.latitude, location?.longitude) }
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isManualGpsMode) {
+                                Button(
+                                    onClick = { tourManager.resetManualLocation(location?.latitude, location?.longitude) },
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text("Reset")
+                                }
+                            }
+                            Switch(
+                                checked = isManualGpsMode,
+                                onCheckedChange = { tourManager.setManualGpsMode(it, location?.latitude, location?.longitude) }
+                            )
+                        }
                     }
 
                     Text(
@@ -516,6 +529,7 @@ fun GaitApp(
                 isManualGpsMode = isManualGpsMode,
                 manualLat = manualLat,
                 manualLon = manualLon,
+                resetTrigger = resetTrigger,
                 onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) }
             )
 
@@ -536,9 +550,12 @@ fun OsmMapPreview(
     isManualGpsMode: Boolean = false,
     manualLat: Double? = null,
     manualLon: Double? = null,
+    resetTrigger: Int = 0,
     onManualLocationChange: ((Double, Double) -> Unit)? = null,
     modifier: Modifier = Modifier.fillMaxWidth().height(250.dp)
 ) {
+    var isDragging by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -546,7 +563,11 @@ fun OsmMapPreview(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
+                var lastResetTrigger = resetTrigger
                 MapView(context).apply {
+                    // Store the last trigger in the tag or a local variable within the factory/update scope
+                    tag = lastResetTrigger 
+
                     setOnTouchListener { v, event ->
                         when (event.action) {
                             android.view.MotionEvent.ACTION_DOWN -> v.parent.requestDisallowInterceptTouchEvent(true)
@@ -590,32 +611,61 @@ fun OsmMapPreview(
                 }
             },
             update = { mapView ->
-                mapView.overlays.removeAll { it is Marker && (it.title == "User" || it.title == "Manual") }
-                
+                var manualMarker = mapView.overlays.find { it is Marker && it.title == "Manual" } as? Marker
+                var userMarker = mapView.overlays.find { it is Marker && it.title == "User" } as? Marker
+
+                val lastResetTrigger = mapView.tag as? Int ?: 0
+                val forceUpdate = resetTrigger != lastResetTrigger
+                if (forceUpdate) {
+                    mapView.tag = resetTrigger
+                }
+
                 if (isManualGpsMode && manualLat != null && manualLon != null) {
-                    val manualMarker = Marker(mapView)
-                    manualMarker.position = GeoPoint(manualLat, manualLon)
-                    manualMarker.title = "Manual"
-                    manualMarker.isDraggable = true
-                    manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
-                    manualMarker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                        override fun onMarkerDragStart(marker: Marker) {}
-                        override fun onMarkerDrag(marker: Marker) {}
-                        override fun onMarkerDragEnd(marker: Marker) {
-                            onManualLocationChange?.invoke(marker.position.latitude, marker.position.longitude)
-                        }
-                    })
-                    mapView.overlays.add(manualMarker)
-                    mapView.invalidate()
+                    if (userMarker != null) {
+                        mapView.overlays.remove(userMarker)
+                    }
+                    if (manualMarker == null) {
+                        manualMarker = Marker(mapView)
+                        manualMarker.title = "Manual"
+                        manualMarker.isDraggable = true
+                        manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
+                        manualMarker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                            override fun onMarkerDragStart(marker: Marker) {
+                                isDragging = true
+                            }
+                            override fun onMarkerDrag(marker: Marker) {}
+                            override fun onMarkerDragEnd(marker: Marker) {
+                                isDragging = false
+                                onManualLocationChange?.invoke(marker.position.latitude, marker.position.longitude)
+                            }
+                        })
+                        mapView.overlays.add(manualMarker)
+                        manualMarker.position = GeoPoint(manualLat, manualLon)
+                        mapView.invalidate()
+                    }
+                    
+                    if (forceUpdate && !isDragging) {
+                        manualMarker.position = GeoPoint(manualLat, manualLon)
+                        mapView.invalidate()
+                    }
+
                 } else if (!isManualGpsMode && location != null) {
+                    if (manualMarker != null) {
+                        mapView.overlays.remove(manualMarker)
+                    }
+                    
                     val userPt = GeoPoint(location.latitude, location.longitude)
-                    
-                    val userMarker = Marker(mapView)
+                    if (userMarker == null) {
+                        userMarker = Marker(mapView)
+                        userMarker.title = "User"
+                        userMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_mylocation)
+                        mapView.overlays.add(userMarker)
+                    }
                     userMarker.position = userPt
-                    userMarker.title = "User"
-                    userMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_mylocation)
-                    mapView.overlays.add(userMarker)
-                    
+                    mapView.invalidate()
+                } else {
+                    if (manualMarker != null) mapView.overlays.remove(manualMarker)
+                    if (userMarker != null) mapView.overlays.remove(userMarker)
                     mapView.invalidate()
                 }
             }

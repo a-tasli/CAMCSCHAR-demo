@@ -52,12 +52,22 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val _manualLocationLon = MutableStateFlow<Double?>(null)
     val manualLocationLon: StateFlow<Double?> = _manualLocationLon.asStateFlow()
 
+    private val _manualGpsResetTrigger = MutableStateFlow(0)
+    val manualGpsResetTrigger: StateFlow<Int> = _manualGpsResetTrigger.asStateFlow()
+
     fun setManualGpsMode(enabled: Boolean, defaultLat: Double?, defaultLon: Double?) {
         _isManualGpsMode.value = enabled
         if (enabled && _manualLocationLat.value == null) {
             _manualLocationLat.value = defaultLat ?: 40.892
             _manualLocationLon.value = defaultLon ?: 29.377
         }
+    }
+
+    fun resetManualLocation(defaultLat: Double?, defaultLon: Double?) {
+        _manualLocationLat.value = defaultLat ?: 40.892
+        _manualLocationLon.value = defaultLon ?: 29.377
+        _manualGpsResetTrigger.value += 1
+        checkLocation(_manualLocationLat.value!!, _manualLocationLon.value!!)
     }
 
     fun updateManualLocation(lat: Double, lon: Double) {
