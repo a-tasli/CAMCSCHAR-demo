@@ -43,6 +43,29 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val _isAutoMode = MutableStateFlow(false)
     val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
 
+    private val _isManualGpsMode = MutableStateFlow(false)
+    val isManualGpsMode: StateFlow<Boolean> = _isManualGpsMode.asStateFlow()
+
+    private val _manualLocationLat = MutableStateFlow<Double?>(null)
+    val manualLocationLat: StateFlow<Double?> = _manualLocationLat.asStateFlow()
+
+    private val _manualLocationLon = MutableStateFlow<Double?>(null)
+    val manualLocationLon: StateFlow<Double?> = _manualLocationLon.asStateFlow()
+
+    fun setManualGpsMode(enabled: Boolean, defaultLat: Double?, defaultLon: Double?) {
+        _isManualGpsMode.value = enabled
+        if (enabled && _manualLocationLat.value == null) {
+            _manualLocationLat.value = defaultLat ?: 40.892
+            _manualLocationLon.value = defaultLon ?: 29.377
+        }
+    }
+
+    fun updateManualLocation(lat: Double, lon: Double) {
+        _manualLocationLat.value = lat
+        _manualLocationLon.value = lon
+        checkLocation(lat, lon)
+    }
+
     private var currentLoadLevel = "Waiting..."
     private var delayJob: Job? = null
     private var currentDelay = 0L

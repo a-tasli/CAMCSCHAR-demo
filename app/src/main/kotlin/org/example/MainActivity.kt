@@ -153,11 +153,12 @@ fun MainAppScreen(
     val tabs = listOf("Tour", "Debug")
     val location by locationSensorManager.location.collectAsState()
     
-    var isManualGpsMode by remember { mutableStateOf(false) }
-    var manualLocation by remember { mutableStateOf<GeoPoint?>(null) }
+    val isManualGpsMode by tourManager.isManualGpsMode.collectAsState()
+    val manualLat by tourManager.manualLocationLat.collectAsState()
+    val manualLon by tourManager.manualLocationLon.collectAsState()
 
-    val effectiveLat = if (isManualGpsMode) manualLocation?.latitude else location?.latitude
-    val effectiveLon = if (isManualGpsMode) manualLocation?.longitude else location?.longitude
+    val effectiveLat = if (isManualGpsMode) manualLat else location?.latitude
+    val effectiveLon = if (isManualGpsMode) manualLon else location?.longitude
 
     LaunchedEffect(effectiveLat, effectiveLon) {
         if (effectiveLat != null && effectiveLon != null) {
@@ -181,7 +182,8 @@ fun MainAppScreen(
                 tourManager = tourManager, 
                 location = location,
                 isManualGpsMode = isManualGpsMode,
-                manualLocation = manualLocation
+                manualLat = manualLat,
+                manualLon = manualLon
             )
             1 -> GaitApp(
                 analyzer = analyzer, 
@@ -191,14 +193,9 @@ fun MainAppScreen(
                 tourManager = tourManager, 
                 blinkSensorManager = blinkSensorManager,
                 isManualGpsMode = isManualGpsMode,
-                onManualGpsModeChange = { 
-                    isManualGpsMode = it 
-                    if (it && manualLocation == null) {
-                        manualLocation = location?.let { loc -> GeoPoint(loc.latitude, loc.longitude) } ?: GeoPoint(40.892, 29.377)
-                    }
-                },
-                manualLocation = manualLocation,
-                onManualLocationChange = { manualLocation = it }
+                manualLat = manualLat,
+                manualLon = manualLon,
+                location = location
             )
         }
     }
@@ -209,7 +206,8 @@ fun TourScreen(
     tourManager: TourManager, 
     location: android.location.Location?,
     isManualGpsMode: Boolean = false,
-    manualLocation: GeoPoint? = null
+    manualLat: Double? = null,
+    manualLon: Double? = null
 ) {
     val history by tourManager.history.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
@@ -235,7 +233,8 @@ fun TourScreen(
             OsmMapPreview(
                 location = location, 
                 isManualGpsMode = isManualGpsMode,
-                manualLocation = manualLocation,
+                manualLat = manualLat,
+                manualLon = manualLon,
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
         } else {
@@ -295,9 +294,9 @@ fun GaitApp(
     tourManager: TourManager, 
     blinkSensorManager: BlinkSensorManager,
     isManualGpsMode: Boolean = false,
-    onManualGpsModeChange: (Boolean) -> Unit = {},
-    manualLocation: GeoPoint? = null,
-    onManualLocationChange: ((GeoPoint) -> Unit)? = null
+    manualLat: Double? = null,
+    manualLon: Double? = null,
+    location: android.location.Location? = null
 ) {
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
@@ -423,7 +422,7 @@ fun GaitApp(
                         Text("Manual GPS Mode", fontSize = 14.sp, color = Color.Black)
                         Switch(
                             checked = isManualGpsMode,
-                            onCheckedChange = onManualGpsModeChange
+                            onCheckedChange = { tourManager.setManualGpsMode(it, location?.latitude, location?.longitude) }
                         )
                     }
 
@@ -515,8 +514,9 @@ fun GaitApp(
             OsmMapPreview(
                 location = location,
                 isManualGpsMode = isManualGpsMode,
-                manualLocation = manualLocation,
-                onManualLocationChange = onManualLocationChange
+                manualLat = manualLat,
+                manualLon = manualLon,
+                onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) }
             )
 
             Spacer(modifier = Modifier.weight(1f))
@@ -534,8 +534,9 @@ fun GaitApp(
 fun OsmMapPreview(
     location: android.location.Location?,
     isManualGpsMode: Boolean = false,
-    manualLocation: GeoPoint? = null,
-    onManualLocationChange: ((GeoPoint) -> Unit)? = null,
+    manualLat: Double? = null,
+    manualLon: Double? = null,
+    onManualLocationChange: ((Double, Double) -> Unit)? = null,
     modifier: Modifier = Modifier.fillMaxWidth().height(250.dp)
 ) {
     Card(
@@ -578,16 +579,22 @@ fun OsmMapPreview(
                         overlays.add(circle)
                     }
                     
-                    val centerPt = GeoPoint(40.892, 29.377)
+                    val centerPt = if (isManualGpsMode && manualLat != null && manualLon != null) {
+                        GeoPoint(manualLat, manualLon)
+                    } else if (location != null) {
+                        GeoPoint(location.latitude, location.longitude)
+                    } else {
+                        GeoPoint(40.892, 29.377)
+                    }
                     controller.setCenter(centerPt)
                 }
             },
             update = { mapView ->
                 mapView.overlays.removeAll { it is Marker && (it.title == "User" || it.title == "Manual") }
                 
-                if (isManualGpsMode && manualLocation != null) {
+                if (isManualGpsMode && manualLat != null && manualLon != null) {
                     val manualMarker = Marker(mapView)
-                    manualMarker.position = manualLocation
+                    manualMarker.position = GeoPoint(manualLat, manualLon)
                     manualMarker.title = "Manual"
                     manualMarker.isDraggable = true
                     manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
@@ -595,7 +602,7 @@ fun OsmMapPreview(
                         override fun onMarkerDragStart(marker: Marker) {}
                         override fun onMarkerDrag(marker: Marker) {}
                         override fun onMarkerDragEnd(marker: Marker) {
-                            onManualLocationChange?.invoke(marker.position)
+                            onManualLocationChange?.invoke(marker.position.latitude, marker.position.longitude)
                         }
                     })
                     mapView.overlays.add(manualMarker)
