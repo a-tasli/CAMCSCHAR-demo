@@ -16,7 +16,8 @@ data class GaitFeatures(
     val gaitLoadIndex: Double?,
     val hrLoadIndex: Double?,
     val combinedLoadIndex: Double?,
-    val loadLevel: String
+    val loadLevel: String,
+    val isWalking: Boolean
 )
 
 class GaitAnalyzer {
@@ -59,6 +60,17 @@ class GaitAnalyzer {
 
     @Synchronized
     fun analyze(currentHr: Int?, isSpeaking: Boolean = false): GaitFeatures? {
+        val currentTimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+        val lastStepTimeNanos = stepTimestamps.lastOrNull() ?: 0L
+        
+        // If no steps yet, or last step was > 5s ago, we are not walking
+        val isWalking = if (lastStepTimeNanos == 0L) {
+            false
+        } else {
+            val secondsSinceLastStep = (currentTimeNanos - lastStepTimeNanos) / 1_000_000_000.0
+            secondsSinceLastStep < 5.0 && stepTimestamps.size >= 2
+        }
+
         val sdnn = if (rrData.size > 5) {
             val meanRR = rrData.average()
             sqrt(rrData.map { (it - meanRR).pow(2) }.average())
@@ -114,12 +126,15 @@ class GaitAnalyzer {
             }
         }
 
+        // Feature: if user stops for 5s, reset gait score to 25 (Low)
+        if (!isWalking) {
+            gaitLoadIndex = 25.0
+        }
+
         val combinedLoadIndex = if (gaitLoadIndex != null && hrLoadIndex != null) {
             (gaitLoadIndex + hrLoadIndex) / 2.0
-        } else if (gaitLoadIndex != null) {
-            gaitLoadIndex
         } else {
-            hrLoadIndex
+            gaitLoadIndex ?: hrLoadIndex
         }
 
         var finalLevel = "Waiting..."
@@ -153,7 +168,8 @@ class GaitAnalyzer {
             gaitLoadIndex = gaitLoadIndex,
             hrLoadIndex = hrLoadIndex,
             combinedLoadIndex = combinedLoadIndex,
-            loadLevel = finalLevel
+            loadLevel = finalLevel,
+            isWalking = isWalking
         )
     }
 }

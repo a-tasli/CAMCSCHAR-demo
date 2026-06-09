@@ -579,7 +579,12 @@ fun GaitApp(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SmallLoadCard("Gait", features?.gaitLoadIndex ?: 0.0, Modifier.weight(1f))
+                SmallLoadCard(
+                    label = "Gait", 
+                    load = features?.gaitLoadIndex ?: 0.0, 
+                    modifier = Modifier.weight(1f),
+                    subtitle = if (features?.isWalking == false) "not walking" else null
+                )
                 SmallLoadCard("Heart", features?.hrLoadIndex ?: 0.0, Modifier.weight(1f))
             }
 
@@ -874,7 +879,7 @@ fun HeartRateCard(hrValue: Int?, bleState: String, sdnn: Double) {
 }
 
 @Composable
-fun SmallLoadCard(label: String, load: Double?, modifier: Modifier = Modifier) {
+fun SmallLoadCard(label: String, load: Double?, modifier: Modifier = Modifier, subtitle: String? = null) {
     val color = if (load == null) Color.Gray else getNumericLoadColor(load)
     Card(
         modifier = modifier.height(80.dp),
@@ -894,6 +899,9 @@ fun SmallLoadCard(label: String, load: Double?, modifier: Modifier = Modifier) {
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+            if (subtitle != null) {
+                Text(text = subtitle, fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
+            }
         }
     }
 }
