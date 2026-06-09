@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                Surface(color = Color.Black) {
+                Surface(color = Color.White) {
                     MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
                 }
             }
@@ -379,7 +379,7 @@ fun TourScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0))
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
                     LazyColumn(
                         state = listState,
@@ -516,16 +516,6 @@ fun TourScreen(
 
                 IconButton(onClick = { tourManager.nextIndex() }) {
                     Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Next")
-                }
-
-                // Auto Mode Indicator/Toggle (Optional)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Auto", fontSize = 10.sp)
-                    Switch(
-                        checked = isAutoMode,
-                        onCheckedChange = { tourManager.toggleAutoMode() },
-                        modifier = Modifier.scale(0.7f)
-                    )
                 }
             }
         }

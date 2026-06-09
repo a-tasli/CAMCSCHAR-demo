@@ -49,8 +49,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     
     private val _isDetailed = MutableStateFlow(true)
     val isDetailed: StateFlow<Boolean> = _isDetailed.asStateFlow()
-    
-    private val _isAutoMode = MutableStateFlow(false)
+
+    private val _isAutoMode = MutableStateFlow(true)
     val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
 
     private val _isLargeImageMode = MutableStateFlow(false)

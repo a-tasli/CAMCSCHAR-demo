@@ -1,3 +1,5 @@
+- SELIM MAIL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 + Add GPS with waterline
     + test this
 
@@ -5,11 +7,17 @@
 
 - Add actual multimodality (images)
     + finding images
-    - multimodal content selection
+    - multimodal content selection (switch between the image layout modes depending on context)
+    + big and small image modes
+        - add gallery-like swiping to big picture mode
+    - Define how the map box interacts with the image layout modes
     + map display
 
 + Fact check the content, change accordingly
     + The memorial is an actual memorial not a lake
+
+
+- Make the TTS generation slow by default and speed it up when needed
 
 - Add logging for everything
 
@@ -23,6 +31,9 @@
 - Test informally
 
 - Hoca için sunum hazırlamak
+    + data flow diagram
+    - screenshots
+    - index
 
 - Test formally
 
