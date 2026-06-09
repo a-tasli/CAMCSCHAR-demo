@@ -31,7 +31,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private var maxIndex = 0
     private var currentUtteranceId: String? = null
     
-    private val _history = MutableStateFlow<List<String>>(listOf("Press Play on the Debug tab to start tour."))
+    private val _history = MutableStateFlow<List<String>>(listOf("Welcome to the Campus Tour! Press 'Start Tour' to begin your automated journey."))
     val history: StateFlow<List<String>> = _history.asStateFlow()
     
     private val _isPlaying = MutableStateFlow(false)
@@ -100,12 +100,15 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             if (distMeters <= effectiveRadius) {
                 foundPoi = poi.name
                 if (_currentLocation.value != poi.name) {
-                    val wasPlaying = _isPlaying.value
                     selectLocation(poi.name)
-                    if (wasPlaying) {
+                    if (_isAutoMode.value) {
                         _isPlaying.value = true
                         playCurrentIndexWithDelay()
                     }
+                } else if (_currentArea.value == "None" && _isAutoMode.value && !_isPlaying.value) {
+                    // Entered the current POI from outside (None) while in Auto Mode and not already playing
+                    _isPlaying.value = true
+                    playCurrentIndexWithDelay()
                 }
                 break
             }
@@ -152,7 +155,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             _isPlaying.value = false
         }
         loadScripts(location)
-        _history.value = listOf("Selected ${location.replace('_', ' ')}. Press Play to start.")
+        _history.value = listOf("Selected ${location.replace('_', ' ')}. Press 'Start Tour' to begin.")
     }
 
     private fun parseScript(assetPath: String): List<ScriptLine> {
@@ -175,6 +178,22 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     fun toggleAutoMode() {
         _isAutoMode.value = !_isAutoMode.value
+    }
+
+    fun setAutoMode(enabled: Boolean) {
+        _isAutoMode.value = enabled
+    }
+
+    fun startTour() {
+        if (!_isPlaying.value) {
+            _isPlaying.value = true
+            if (currentIndex < maxIndex) {
+                playCurrentIndexWithDelay()
+            } else {
+                currentIndex = 0
+                playCurrentIndexWithDelay()
+            }
+        }
     }
 
     fun updateContext(level: String, isSpeaking: Boolean) {

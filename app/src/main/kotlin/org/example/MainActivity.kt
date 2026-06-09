@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
         Configuration.getInstance().userAgentValue = packageName
         
         sensorManager = GaitSensorManager(this, analyzer)
@@ -76,10 +77,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
+                Surface(color = Color.Black) {
+                    MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
+                }
             }
         }
-    }
+        }
 
     private fun checkAndRequestPermissions() {
         val permissionsList = mutableListOf(
@@ -166,13 +169,24 @@ fun MainAppScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selectedTabIndex) {
+    Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+        TabRow(
+            selectedTabIndex = selectedTabIndex,
+            modifier = Modifier.height(72.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.primary
+        ) {
             tabs.forEachIndexed { index, title ->
                 Tab(
                     selected = selectedTabIndex == index,
                     onClick = { selectedTabIndex = index },
-                    text = { Text(title) }
+                    text = { 
+                        Text(
+                            text = title,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        ) 
+                    }
                 )
             }
         }
@@ -212,6 +226,8 @@ fun TourScreen(
     val history by tourManager.history.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
+    val isPlaying by tourManager.isPlaying.collectAsState()
+    val isAutoMode by tourManager.isAutoMode.collectAsState()
     val listState = rememberLazyListState()
 
     val showMap = currentArea == "None"
@@ -222,69 +238,99 @@ fun TourScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Top half: Image Box or Map
-        if (showMap) {
-            OsmMapPreview(
-                location = location, 
-                isManualGpsMode = isManualGpsMode,
-                manualLat = manualLat,
-                manualLon = manualLon,
-                resetTrigger = resetTrigger,
-                onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
-        } else {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Top half: Image Box or Map
+            if (showMap) {
+                OsmMapPreview(
+                    location = location, 
+                    isManualGpsMode = isManualGpsMode,
+                    manualLat = manualLat,
+                    manualLon = manualLon,
+                    resetTrigger = resetTrigger,
+                    onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                )
+            } else {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "Image Placeholder",
+                            color = Color.Gray,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                    }
+                }
+            }
+
+            // Bottom half: Text Box
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0))
             ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Image Placeholder",
-                        color = Color.Gray,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    itemsIndexed(history) { index, text ->
+                        val isLast = index == history.size - 1
+                        val textColor = if (isLast) Color.Black else Color.DarkGray
+
+                        Text(
+                            text = text,
+                            fontSize = 18.sp,
+                            fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                            color = textColor
+                        )
+                    }
                 }
             }
         }
 
-        // Bottom half: Text Box
-        Card(
+        ExtendedFloatingActionButton(
+            onClick = { 
+                if (!isPlaying) {
+                    tourManager.setAutoMode(true)
+                    tourManager.startTour()
+                } else {
+                    tourManager.togglePlayPause() 
+                }
+            },
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0))
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                itemsIndexed(history) { index, text ->
-                    val isLast = index == history.size - 1
-                    val textColor = if (isLast) Color.Black else Color.DarkGray
-
-                    Text(
-                        text = text,
-                        fontSize = 18.sp,
-                        fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
-                        color = textColor
-                    )
-                }
+                .align(Alignment.BottomEnd)
+                .padding(24.dp)
+                .height(64.dp),
+            containerColor = if (isPlaying) Color(0xFFE91E63) else Color(0xFF4CAF50),
+            contentColor = Color.White,
+            icon = {
+                // Icon could go here
+            },
+            text = {
+                Text(
+                    text = if (isPlaying) "Stop Tour" else "Start Tour",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             }
-        }
+        )
     }
 }
 
