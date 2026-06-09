@@ -16,6 +16,14 @@ import kotlin.math.hypot
 
 data class ScriptLine(val index: Int, val text: String)
 
+data class HistoryItem(
+    val text: String,
+    val isUtterance: Boolean = false,
+    val showImage: Boolean? = null,
+    val location: String? = null,
+    val utteranceIndex: Int? = null
+)
+
 class TourManager(private val context: Context, private val ttsManager: TTSManager) {
     private val detailedScript = mutableListOf<ScriptLine>()
     private val simplifiedScript = mutableListOf<ScriptLine>()
@@ -30,11 +38,11 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private var currentIndex = 0
     private var maxIndex = 0
     private var currentUtteranceId: String? = null
-    
+
     private var guideFinished = false
-    
-    private val _history = MutableStateFlow<List<String>>(listOf("Welcome to the Campus Tour! Press 'Start Tour' to begin."))
-    val history: StateFlow<List<String>> = _history.asStateFlow()
+
+    private val _history = MutableStateFlow<List<HistoryItem>>(listOf(HistoryItem("Welcome to the Campus Tour! Press 'Start Tour' to begin.")))
+    val history: StateFlow<List<HistoryItem>> = _history.asStateFlow()
     
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -44,6 +52,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     
     private val _isAutoMode = MutableStateFlow(false)
     val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
+
+    private val _isLargeImageMode = MutableStateFlow(false)
+    val isLargeImageMode: StateFlow<Boolean> = _isLargeImageMode.asStateFlow()
 
     private val _isManualGpsMode = MutableStateFlow(false)
     val isManualGpsMode: StateFlow<Boolean> = _isManualGpsMode.asStateFlow()
@@ -134,7 +145,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                             playCurrentIndexWithDelay()
                         } else {
                             _isPlaying.value = false
-                            _history.value = _history.value + "Tour finished."
+                            val updatedHistory = _history.value.toMutableList()
+                            updatedHistory.add(HistoryItem(text = "Tour finished.", isUtterance = false))
+                            _history.value = updatedHistory
                         }
                     }
                 }
@@ -161,8 +174,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             _isPlaying.value = false
         }
         loadScripts(location)
-        _history.value = listOf("Selected ${location.replace('_', ' ')}. Press 'Start Tour' to begin.")
-    }
+        _history.value = listOf(HistoryItem(text = "Selected ${location.replace('_', ' ')}. Press Play to start.", isUtterance = false))
+        }
 
     private fun parseScript(assetPath: String): List<ScriptLine> {
         val lines = mutableListOf<ScriptLine>()
@@ -186,6 +199,10 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         _isAutoMode.value = !_isAutoMode.value
     }
 
+    fun toggleLargeImageMode() {
+        _isLargeImageMode.value = !_isLargeImageMode.value
+    }
+
     fun setAutoMode(enabled: Boolean) {
         _isAutoMode.value = enabled
     }
@@ -207,9 +224,18 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         ttsManager.stop()
         _isPlaying.value = false
         guideFinished = false
-        _currentLocation.value = "guide"
-        loadScripts("guide")
-        _history.value = listOf("Welcome to the Campus Tour! Press 'Start Tour' to begin.")
+        
+        val startLocation = if (_currentArea.value != "None") _currentArea.value else "guide"
+        _currentLocation.value = startLocation
+        loadScripts(startLocation)
+        
+        val welcomeText = if (startLocation == "guide") {
+            "Welcome to the Campus Tour! Press 'Start Tour' to begin."
+        } else {
+            "Welcome to the Campus Tour! You are currently at ${startLocation.replace('_', ' ')}. Press 'Start Tour' to begin."
+        }
+        
+        _history.value = listOf(HistoryItem(text = welcomeText, isUtterance = false))
     }
 
     fun nextIndex() {
@@ -312,14 +338,19 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         val script = if (_isDetailed.value) detailedScript else simplifiedScript
         if (currentIndex < script.size) {
             val line = script[currentIndex]
-            val displayMode = if (_isDetailed.value) "Detailed" else "Simplified"
-            val newText = "[$displayMode - ${currentIndex + 1}/$maxIndex]\n\n${line.text}"
             
             val updatedHistory = _history.value.toMutableList()
             if (currentIndex == 0) {
                 updatedHistory.clear()
             }
-            updatedHistory.add(newText)
+            updatedHistory.add(
+                HistoryItem(
+                    text = line.text, 
+                    isUtterance = true, 
+                    location = _currentLocation.value,
+                    utteranceIndex = line.index
+                )
+            )
             _history.value = updatedHistory
             
             currentUtteranceId = UUID.randomUUID().toString()
@@ -327,7 +358,20 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         } else {
             // In case the scripts have different lengths
             _isPlaying.value = false
-            _history.value = _history.value + "End of script reached."
+            val updatedHistory = _history.value.toMutableList()
+            updatedHistory.add(HistoryItem(text = "End of script reached.", isUtterance = false))
+            _history.value = updatedHistory
+        }
+    }
+    
+    fun toggleImageForUtterance(index: Int, currentExpandedState: Boolean) {
+        val updatedHistory = _history.value.toMutableList()
+        if (index in updatedHistory.indices) {
+            val item = updatedHistory[index]
+            if (item.isUtterance) {
+                updatedHistory[index] = item.copy(showImage = !currentExpandedState)
+                _history.value = updatedHistory
+            }
         }
     }
 }

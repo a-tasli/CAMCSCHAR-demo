@@ -38,6 +38,18 @@ import org.osmdroid.views.overlay.Polygon
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import android.graphics.BitmapFactory
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -249,6 +261,85 @@ fun MainAppScreen(
 }
 
 @Composable
+fun AssetUtteranceImage(
+    location: String?,
+    index: Int?,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    onImageLoaded: ((ImageBitmap) -> Unit)? = null
+) {
+    if (location == null || index == null) return
+
+    val context = LocalContext.current
+    var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var attemptedLoad by remember { mutableStateOf(false) }
+
+    LaunchedEffect(location, index) {
+        withContext(Dispatchers.IO) {
+            try {
+                val assetManager = context.assets
+                val folderPath = "images/$location"
+                val files = assetManager.list(folderPath) ?: emptyArray()
+                
+                // Find a file where the trailing number matches the index exactly
+                val file = files.find { 
+                    val nameWithoutExt = it.substringBeforeLast(".")
+                    val trailingNumber = nameWithoutExt.takeLastWhile { char -> char.isDigit() }.toIntOrNull()
+                    trailingNumber == index
+                }
+                
+                if (file != null) {
+                    val inputStream = assetManager.open("$folderPath/$file")
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    val img = bitmap.asImageBitmap()
+                    inputStream.close()
+                    withContext(Dispatchers.Main) {
+                        imageBitmap = img
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            attemptedLoad = true
+        }
+    }
+
+    LaunchedEffect(imageBitmap) {
+        if (imageBitmap != null) {
+            onImageLoaded?.invoke(imageBitmap!!)
+        }
+    }
+
+    if (imageBitmap != null) {
+        if (isExpanded) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFD6D6D6)),
+                onClick = onToggle
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(), 
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = imageBitmap!!,
+                        contentDescription = "Utterance Image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+        } else {
+            TextButton(onClick = onToggle) {
+                Text("Show Image", fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
 fun TourScreen(
     tourManager: TourManager, 
     location: android.location.Location?,
@@ -261,7 +352,10 @@ fun TourScreen(
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     val isPlaying by tourManager.isPlaying.collectAsState()
     val isAutoMode by tourManager.isAutoMode.collectAsState()
+    val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    var latestImage by remember { mutableStateOf<ImageBitmap?>(null) }
 
     val showMap = currentArea == "None"
 
@@ -280,36 +374,7 @@ fun TourScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Top half: Image Box or Map
-                if (showMap) {
-                    OsmMapPreview(
-                        location = location, 
-                        isManualGpsMode = isManualGpsMode,
-                        manualLat = manualLat,
-                        manualLon = manualLon,
-                        resetTrigger = resetTrigger,
-                        onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                        modifier = Modifier.fillMaxWidth().weight(1f)
-                    )
-                } else {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
-                    ) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Image Placeholder",
-                                color = Color.Gray,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp
-                            )
-                        }
-                    }
-                }
-
-                // Bottom half: Text Box
+                // Top half: Text Box
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -323,22 +388,90 @@ fun TourScreen(
                             .fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        itemsIndexed(history) { index, text ->
+                        itemsIndexed(history) { index, item ->
                             val isLast = index == history.size - 1
                             val textColor = if (isLast) Color.Black else Color.DarkGray
 
-                            Text(
-                                text = text,
-                                fontSize = 18.sp,
-                                fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
-                                color = textColor
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = item.text,
+                                    fontSize = 18.sp,
+                                    fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                                    color = textColor
+                                )
+                                
+                                if (item.isUtterance) {
+                                    val isExpanded = item.showImage ?: !isLargeImageMode
+                                    AssetUtteranceImage(
+                                        location = item.location,
+                                        index = item.utteranceIndex,
+                                        isExpanded = isExpanded,
+                                        onToggle = { 
+                                            tourManager.toggleImageForUtterance(index, isExpanded)
+                                            if (isLast && !isExpanded) {
+                                                coroutineScope.launch {
+                                                    delay(100)
+                                                    listState.animateScrollToItem(history.size - 1)
+                                                }
+                                            }
+                                        },
+                                        onImageLoaded = { bitmap ->
+                                            latestImage = bitmap
+                                            if (isLast) {
+                                                coroutineScope.launch {
+                                                    delay(100)
+                                                    listState.animateScrollToItem(history.size - 1)
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Bottom half: Map or Large Image Box
+                if (showMap) {
+                    OsmMapPreview(
+                        location = location, 
+                        isManualGpsMode = isManualGpsMode,
+                        manualLat = manualLat,
+                        manualLon = manualLon,
+                        resetTrigger = resetTrigger,
+                        onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
+                        modifier = Modifier.fillMaxWidth().weight(0.6f)
+                    )
+                } else if (isLargeImageMode) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            if (latestImage != null) {
+                                Image(
+                                    bitmap = latestImage!!,
+                                    contentDescription = "Latest Utterance Image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(
+                                    text = "Large Image Placeholder\nWaiting for image...",
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-
+        
         // Control Bar
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -430,6 +563,8 @@ fun GaitApp(
     val currentArea by tourManager.currentArea.collectAsState()
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     
+    val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
+    
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
     }
@@ -472,11 +607,18 @@ fun GaitApp(
                     ) {
                         Text("Tour Controls", fontWeight = FontWeight.Bold, color = Color.Black)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Auto Mode", fontSize = 14.sp, color = Color.Black)
-                            Spacer(Modifier.width(8.dp))
+                            Text("Large Img Box", fontSize = 12.sp, color = Color.Black)
+                            Switch(
+                                checked = isLargeImageMode,
+                                onCheckedChange = { tourManager.toggleLargeImageMode() },
+                                modifier = Modifier.scale(0.8f)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Auto Mode", fontSize = 12.sp, color = Color.Black)
                             Switch(
                                 checked = isAutoMode,
-                                onCheckedChange = { tourManager.toggleAutoMode() }
+                                onCheckedChange = { tourManager.toggleAutoMode() },
+                                modifier = Modifier.scale(0.8f)
                             )
                         }
                     }
