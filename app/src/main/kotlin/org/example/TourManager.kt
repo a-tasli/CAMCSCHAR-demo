@@ -20,8 +20,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val detailedScript = mutableListOf<ScriptLine>()
     private val simplifiedScript = mutableListOf<ScriptLine>()
     
-    val availableLocations = listOf("amphitheatre", "lake_memorial", "tosun_terzioglu_garden")
-    private val _currentLocation = MutableStateFlow("amphitheatre")
+    val availableLocations = listOf("guide", "amphitheatre", "lake_memorial", "tosun_terzioglu_garden")
+    private val _currentLocation = MutableStateFlow("guide")
     val currentLocation: StateFlow<String> = _currentLocation.asStateFlow()
 
     private val _currentArea = MutableStateFlow("None")
@@ -31,7 +31,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private var maxIndex = 0
     private var currentUtteranceId: String? = null
     
-    private val _history = MutableStateFlow<List<String>>(listOf("Welcome to the Campus Tour! Press 'Start Tour' to begin your automated journey."))
+    private var guideFinished = false
+    
+    private val _history = MutableStateFlow<List<String>>(listOf("Welcome to the Campus Tour! Press 'Start Tour' to begin."))
     val history: StateFlow<List<String>> = _history.asStateFlow()
     
     private val _isPlaying = MutableStateFlow(false)
@@ -99,9 +101,13 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             val effectiveRadius = if (_currentArea.value == poi.name) poi.radiusMeters + 5.0 else poi.radiusMeters
             if (distMeters <= effectiveRadius) {
                 foundPoi = poi.name
-                if (_currentLocation.value != poi.name) {
+                
+                // If we are currently in "guide" mode and enter a POI, we MUST switch to the POI.
+                // Or if we change from one POI to another.
+                if (_currentLocation.value == "guide" || _currentLocation.value != poi.name) {
+                    val wasPlaying = _isPlaying.value
                     selectLocation(poi.name)
-                    if (_isAutoMode.value) {
+                    if (wasPlaying || _isAutoMode.value) {
                         _isPlaying.value = true
                         playCurrentIndexWithDelay()
                     }
@@ -117,7 +123,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     init {
-        loadScripts("amphitheatre")
+        loadScripts("guide")
         
         scope.launch {
             ttsManager.onUtteranceCompleted.collect { utteranceId ->
@@ -192,6 +198,38 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             } else {
                 currentIndex = 0
                 playCurrentIndexWithDelay()
+            }
+        }
+    }
+
+    fun resetTour() {
+        delayJob?.cancel()
+        ttsManager.stop()
+        _isPlaying.value = false
+        guideFinished = false
+        _currentLocation.value = "guide"
+        loadScripts("guide")
+        _history.value = listOf("Welcome to the Campus Tour! Press 'Start Tour' to begin.")
+    }
+
+    fun nextIndex() {
+        if (currentIndex < maxIndex - 1) {
+            currentIndex++
+            if (_isPlaying.value) {
+                playCurrentIndexWithDelay()
+            } else {
+                playCurrentIndex()
+            }
+        }
+    }
+
+    fun prevIndex() {
+        if (currentIndex > 0) {
+            currentIndex--
+            if (_isPlaying.value) {
+                playCurrentIndexWithDelay()
+            } else {
+                playCurrentIndex()
             }
         }
     }

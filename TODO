@@ -6,6 +6,7 @@
 - Add actual multimodality (images)
     + finding images
     - multimodal content selection
+    + map display
 
 + Fact check the content, change accordingly
     + The memorial is an actual memorial not a lake
@@ -14,10 +15,10 @@
 
 - When features are finalised, update the test scenario.
 
-- Eye tracking / pupil size tracking attempt
++ Eye tracking / pupil size tracking attempt
 
-- User centred UI
-    - add a play button
++ User centered UI
+    + add a play button
 
 - Test informally
 

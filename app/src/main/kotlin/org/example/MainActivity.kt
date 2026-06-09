@@ -36,6 +36,13 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.ui.draw.scale
+import androidx.compose.material.icons.filled.Pause
 
 class MainActivity : ComponentActivity() {
 
@@ -92,6 +99,10 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.CAMERA
         )
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissionsList.add(Manifest.permission.BLUETOOTH_SCAN)
             permissionsList.add(Manifest.permission.BLUETOOTH_CONNECT)
@@ -102,6 +113,7 @@ class MainActivity : ComponentActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             permissionsList.add(Manifest.permission.ACTIVITY_RECOGNITION)
+            permissionsList.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
 
         val missingPermissions = permissionsList.filter {
@@ -130,9 +142,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        sensorManager.stop()
-        voiceManager.stop()
-        locationSensorManager.stop()
+        if (!tourManager.isPlaying.value) {
+            sensorManager.stop()
+            voiceManager.stop()
+            locationSensorManager.stop()
+        }
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        if (!tourManager.isPlaying.value) {
+            sensorManager.stop()
+            voiceManager.stop()
+            locationSensorManager.stop()
+        }
     }
     
     override fun onDestroy() {
@@ -166,6 +189,16 @@ fun MainAppScreen(
     LaunchedEffect(effectiveLat, effectiveLon) {
         if (effectiveLat != null && effectiveLon != null) {
             tourManager.checkLocation(effectiveLat, effectiveLon)
+        }
+    }
+    
+    val isPlaying by tourManager.isPlaying.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            TourService.startService(context)
+        } else {
+            TourService.stopService(context)
         }
     }
 
@@ -238,99 +271,131 @@ fun TourScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Top half: Image Box or Map
-            if (showMap) {
-                OsmMapPreview(
-                    location = location, 
-                    isManualGpsMode = isManualGpsMode,
-                    manualLat = manualLat,
-                    manualLon = manualLon,
-                    resetTrigger = resetTrigger,
-                    onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                    modifier = Modifier.fillMaxWidth().weight(1f)
-                )
-            } else {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Top half: Image Box or Map
+                if (showMap) {
+                    OsmMapPreview(
+                        location = location, 
+                        isManualGpsMode = isManualGpsMode,
+                        manualLat = manualLat,
+                        manualLon = manualLon,
+                        resetTrigger = resetTrigger,
+                        onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    )
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "Image Placeholder",
+                                color = Color.Gray,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                        }
+                    }
+                }
+
+                // Bottom half: Text Box
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0))
                 ) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "Image Placeholder",
-                            color = Color.Gray,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                    }
-                }
-            }
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        itemsIndexed(history) { index, text ->
+                            val isLast = index == history.size - 1
+                            val textColor = if (isLast) Color.Black else Color.DarkGray
 
-            // Bottom half: Text Box
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0))
-            ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    itemsIndexed(history) { index, text ->
-                        val isLast = index == history.size - 1
-                        val textColor = if (isLast) Color.Black else Color.DarkGray
-
-                        Text(
-                            text = text,
-                            fontSize = 18.sp,
-                            fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
-                            color = textColor
-                        )
+                            Text(
+                                text = text,
+                                fontSize = 18.sp,
+                                fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                                color = textColor
+                            )
+                        }
                     }
                 }
             }
         }
 
-        ExtendedFloatingActionButton(
-            onClick = { 
-                if (!isPlaying) {
-                    tourManager.setAutoMode(true)
-                    tourManager.startTour()
-                } else {
-                    tourManager.togglePlayPause() 
+        // Control Bar
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp, horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { tourManager.resetTour() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Reset Tour")
                 }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(24.dp)
-                .height(64.dp),
-            containerColor = if (isPlaying) Color(0xFFE91E63) else Color(0xFF4CAF50),
-            contentColor = Color.White,
-            icon = {
-                // Icon could go here
-            },
-            text = {
-                Text(
-                    text = if (isPlaying) "Stop Tour" else "Start Tour",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
+
+                IconButton(onClick = { tourManager.prevIndex() }) {
+                    Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Previous")
+                }
+
+                FilledIconButton(
+                    onClick = { 
+                        if (!isPlaying) {
+                            tourManager.setAutoMode(true)
+                            tourManager.startTour()
+                        } else {
+                            tourManager.togglePlayPause() 
+                        }
+                    },
+                    modifier = Modifier.size(56.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (isPlaying) Color(0xFFE91E63) else Color(0xFF4CAF50)
+                    )
+                ) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Stop" else "Start",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                IconButton(onClick = { tourManager.nextIndex() }) {
+                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Next")
+                }
+
+                // Auto Mode Indicator/Toggle (Optional)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Auto", fontSize = 10.sp)
+                    Switch(
+                        checked = isAutoMode,
+                        onCheckedChange = { tourManager.toggleAutoMode() },
+                        modifier = Modifier.scale(0.7f)
+                    )
+                }
             }
-        )
+        }
     }
 }
 

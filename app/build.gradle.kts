@@ -46,6 +46,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.1")
     implementation("com.google.mlkit:face-detection:16.1.6")
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("androidx.compose.material:material-icons-extended")
     
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

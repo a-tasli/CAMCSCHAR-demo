@@ -1,0 +1,8 @@
+Welcome to the Sabancı University Campus Tour. 
+You are currently outside of the main points of interest.
+Please follow the map on your screen to reach the first location: the Amphitheatre.
+As you walk, I will monitor your gait and heart rate to adjust the tour's detail level to your comfort.
+Once you enter the Amphitheatre area, I will automatically begin the historical overview of that location.
+For now, enjoy the walk and take in the beautiful campus surroundings.
+The Amphitheatre is located towards the southwest corridor, near the stadium.
+I will wait for you to arrive at the designated area before starting the detailed commentary.
