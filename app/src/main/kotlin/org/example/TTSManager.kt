@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.PlaybackParams
 
 class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
@@ -22,6 +23,9 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var currentVolume = 1.0f
     
     private var audioTrack: AudioTrack? = null
+    private var bytesPerFrame = 2
+    private var totalFramesWritten = 0
+    private var currentSynthesisId: String? = null
     
     private val _onUtteranceCompleted = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val onUtteranceCompleted: SharedFlow<String> = _onUtteranceCompleted.asSharedFlow()
@@ -33,15 +37,20 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
-            tts?.setSpeechRate(currentSpeed)
+            // Keep engine at 1.0, we control speed via AudioTrack for instant response
+            tts?.setSpeechRate(1.0f)
             isInitialized = true
             
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 
                 override fun onDone(utteranceId: String?) {
-                    utteranceId?.let {
-                        _onUtteranceCompleted.tryEmit(it)
+                    utteranceId?.let { id ->
+                        if (totalFramesWritten > 0) {
+                            audioTrack?.setNotificationMarkerPosition(totalFramesWritten)
+                        } else {
+                            _onUtteranceCompleted.tryEmit(id)
+                        }
                     }
                 }
 
@@ -51,6 +60,10 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                 override fun onBeginSynthesis(utteranceId: String?, sampleRateInHz: Int, audioFormat: Int, channelCount: Int) {
                     audioTrack?.stop()
                     audioTrack?.release()
+
+                    currentSynthesisId = utteranceId
+                    bytesPerFrame = channelCount * (if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) 2 else 1)
+                    totalFramesWritten = 0
 
                     val channelConfig = if (channelCount == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
                     
@@ -64,9 +77,26 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                             .setSampleRate(sampleRateInHz)
                             .setChannelMask(channelConfig)
                             .build())
-                        .setBufferSizeInBytes(AudioTrack.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat))
+                        .setBufferSizeInBytes(AudioTrack.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat).coerceAtLeast(1024 * 16))
                         .setTransferMode(AudioTrack.MODE_STREAM)
                         .build()
+                    
+                    audioTrack?.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                        override fun onMarkerReached(track: AudioTrack) {
+                            currentSynthesisId?.let { id ->
+                                _onUtteranceCompleted.tryEmit(id)
+                            }
+                        }
+                        override fun onPeriodicNotification(track: AudioTrack) {}
+                    })
+
+                    // Set initial speed and volume
+                    try {
+                        val params = PlaybackParams().setSpeed(currentSpeed)
+                        audioTrack?.playbackParams = params
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                     
                     audioTrack?.setVolume(currentVolume)
                     audioTrack?.play()
@@ -74,6 +104,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
                 override fun onAudioAvailable(utteranceId: String?, audio: ByteArray) {
                     audioTrack?.write(audio, 0, audio.size)
+                    totalFramesWritten += audio.size / bytesPerFrame
                 }
             })
         }
@@ -81,7 +112,18 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun setSpeed(speed: Float) {
         currentSpeed = speed
-        tts?.setSpeechRate(speed)
+        // Update currently playing track speed instantly
+        if (isInitialized) {
+            audioTrack?.let { track ->
+                try {
+                    val params = track.playbackParams
+                    params.speed = speed
+                    track.playbackParams = params
+                } catch (e: Exception) {
+                    // Track might not be in a state to accept params yet
+                }
+            }
+        }
     }
 
     fun setDucking(duck: Boolean) {
@@ -93,14 +135,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun speak(text: String, utteranceId: String) {
         if (isInitialized) {
-            // We use synthesizeToFile or speak with a null file to trigger the callbacks
-            // speak() with QUEUE_FLUSH will trigger onBeginSynthesis and onAudioAvailable
             val params = Bundle()
-            // We must set the volume to 0 here because we are playing it via AudioTrack manually
-            // Actually, if we use onAudioAvailable, the TTS engine might still try to play it
-            // if we use speak(). To avoid double audio, we should use synthesizeToFile 
-            // to a dummy file or use the newer synthesize method if available.
-            // However, a simpler way is to use speak() but set the TTS engine volume to 0.
             params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.0f)
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         }
