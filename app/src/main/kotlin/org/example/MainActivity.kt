@@ -53,6 +53,8 @@ import android.graphics.BitmapFactory
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.ui.draw.scale
 import androidx.compose.material.icons.filled.Pause
 
@@ -385,7 +387,7 @@ fun TourScreen(
 
     val showMap = currentArea == "None"
 
-    LaunchedEffect(history.size, isLargeImageMode) {
+    LaunchedEffect(history.size, isLargeImageMode, showMap) {
         if (history.isNotEmpty()) {
             listState.animateScrollToItem(history.size - 1)
         }
@@ -400,33 +402,48 @@ fun TourScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Determine order based on mode
-                val showImageBoxFirst = isLargeImageMode && !showMap
+                // Phase 2: Out of Bounds layout (showMap) mimics Large Image Mode
+                // Phase 1: In-bounds layout follows isLargeImageMode
+                val showTopBox = showMap || isLargeImageMode
 
-                if (showImageBoxFirst) {
-                    // Large Image Box on top
+                if (showTopBox) {
+                    // Top Box: Map if Out of Bounds, Image if In Bounds
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (showMap) Color.White else Color(0xFFE0E0E0)
+                        )
                     ) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            if (latestImage != null) {
-                                Image(
-                                    bitmap = latestImage!!,
-                                    contentDescription = "Latest Utterance Image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Text(
-                                    text = "Large Image Placeholder\nWaiting for image...",
-                                    color = Color.Gray,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
+                        if (showMap) {
+                            OsmMapPreview(
+                                location = location, 
+                                isManualGpsMode = isManualGpsMode,
+                                manualLat = manualLat,
+                                manualLon = manualLon,
+                                resetTrigger = resetTrigger,
+                                onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (latestImage != null) {
+                                    Image(
+                                        bitmap = latestImage!!,
+                                        contentDescription = "Latest Utterance Image",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Large Image Placeholder\nWaiting for image...",
+                                        color = Color.Gray,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 20.sp,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
                             }
                         }
                     }
@@ -452,7 +469,8 @@ fun TourScreen(
 
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (item.isUtterance) {
-                                    val isExpanded = item.showImage ?: !isLargeImageMode
+                                    // Expand if out of bounds OR if in small image mode
+                                    val isExpanded = item.showImage ?: (showMap || !isLargeImageMode)
                                     AssetUtteranceImage(
                                         location = item.location,
                                         index = item.utteranceIndex,
@@ -489,44 +507,7 @@ fun TourScreen(
                     }
                 }
 
-                // Map or Large Image Box (if not already shown on top)
-                if (showMap) {
-                    OsmMapPreview(
-                        location = location, 
-                        isManualGpsMode = isManualGpsMode,
-                        manualLat = manualLat,
-                        manualLon = manualLon,
-                        resetTrigger = resetTrigger,
-                        onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                        modifier = Modifier.fillMaxWidth().weight(0.6f)
-                    )
-                } else if (!showImageBoxFirst && isLargeImageMode) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
-                    ) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            if (latestImage != null) {
-                                Image(
-                                    bitmap = latestImage!!,
-                                    contentDescription = "Latest Utterance Image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Text(
-                                    text = "Large Image Placeholder\nWaiting for image...",
-                                    color = Color.Gray,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
-                            }
-                        }
-                    }
-                }
+                // Bottom sections (Map or Fallback) are now consolidated in the Top Box logic above
             }
 
             // Minimap overlay when NOT in "None" area (not out of bounds)
@@ -546,7 +527,8 @@ fun TourScreen(
                         manualLon = manualLon,
                         resetTrigger = resetTrigger,
                         onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        isMinimap = true
                     )
                 }
             }
@@ -862,124 +844,161 @@ fun OsmMapPreview(
     manualLon: Double? = null,
     resetTrigger: Int = 0,
     onManualLocationChange: ((Double, Double) -> Unit)? = null,
-    modifier: Modifier = Modifier.fillMaxWidth().height(250.dp)
+    modifier: Modifier = Modifier.fillMaxWidth().height(250.dp),
+    isMinimap: Boolean = false
 ) {
     var isDragging by remember { mutableStateOf(false) }
+    var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
 
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                var lastResetTrigger = resetTrigger
-                MapView(context).apply {
-                    // Store the last trigger in the tag or a local variable within the factory/update scope
-                    tag = lastResetTrigger 
+        Box(modifier = Modifier.fillMaxSize()) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    var lastResetTrigger = resetTrigger
+                    MapView(context).apply {
+                        tag = lastResetTrigger 
 
-                    setOnTouchListener { v, event ->
-                        when (event.action) {
-                            android.view.MotionEvent.ACTION_DOWN -> v.parent.requestDisallowInterceptTouchEvent(true)
-                            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> v.parent.requestDisallowInterceptTouchEvent(false)
+                        setOnTouchListener { v, event ->
+                            when (event.action) {
+                                android.view.MotionEvent.ACTION_DOWN -> v.parent.requestDisallowInterceptTouchEvent(true)
+                                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> v.parent.requestDisallowInterceptTouchEvent(false)
+                            }
+                            false
                         }
-                        false
-                    }
-                    setMultiTouchControls(true)
-                    controller.setZoom(16.0)
-                    
-                    val pois = listOf(
-                        TourManager.POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 80.0),
-                        TourManager.POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 60.0),
-                        TourManager.POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 80.0)
-                    )
-                    
-                    for (poi in pois) {
-                        val center = GeoPoint(poi.lat, poi.lon)
-                        val marker = Marker(this)
-                        marker.position = center
-                        marker.title = poi.name
-                        overlays.add(marker)
+                        setMultiTouchControls(true)
+                        setBuiltInZoomControls(!isMinimap)
+                        controller.setZoom(16.0)
                         
-                        val circle = Polygon(this)
-                        val pts = Polygon.pointsAsCircle(center, poi.radiusMeters)
-                        circle.points = pts
-                        circle.fillColor = 0x220000FF
-                        circle.strokeColor = 0x880000FF.toInt()
-                        circle.strokeWidth = 2.0f
-                        overlays.add(circle)
+                        val pois = listOf(
+                            TourManager.POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 80.0),
+                            TourManager.POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 60.0),
+                            TourManager.POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 80.0)
+                        )
+                        
+                        for (poi in pois) {
+                            val center = GeoPoint(poi.lat, poi.lon)
+                            val marker = Marker(this)
+                            marker.position = center
+                            marker.title = poi.name
+                            overlays.add(marker)
+                            
+                            val circle = Polygon(this)
+                            val pts = Polygon.pointsAsCircle(center, poi.radiusMeters)
+                            circle.points = pts
+                            circle.fillColor = 0x220000FF
+                            circle.strokeColor = 0x880000FF.toInt()
+                            circle.strokeWidth = 2.0f
+                            overlays.add(circle)
+                        }
+                        
+                        val centerPt = if (isManualGpsMode && manualLat != null && manualLon != null) {
+                            GeoPoint(manualLat, manualLon)
+                        } else if (location != null) {
+                            GeoPoint(location.latitude, location.longitude)
+                        } else {
+                            GeoPoint(40.892, 29.377)
+                        }
+                        controller.setCenter(centerPt)
+                        mapViewInstance = this
                     }
-                    
-                    val centerPt = if (isManualGpsMode && manualLat != null && manualLon != null) {
-                        GeoPoint(manualLat, manualLon)
-                    } else if (location != null) {
-                        GeoPoint(location.latitude, location.longitude)
+                },
+                update = { mapView ->
+                    var manualMarker = mapView.overlays.find { it is Marker && it.title == "Manual" } as? Marker
+                    var userMarker = mapView.overlays.find { it is Marker && it.title == "User" } as? Marker
+
+                    val lastResetTrigger = mapView.tag as? Int ?: 0
+                    val forceUpdate = resetTrigger != lastResetTrigger
+                    if (forceUpdate) {
+                        mapView.tag = resetTrigger
+                    }
+
+                    if (isManualGpsMode && manualLat != null && manualLon != null) {
+                        if (userMarker != null) {
+                            mapView.overlays.remove(userMarker)
+                        }
+                        if (manualMarker == null) {
+                            manualMarker = Marker(mapView)
+                            manualMarker.title = "Manual"
+                            manualMarker.isDraggable = true
+                            manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
+                            manualMarker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                                override fun onMarkerDragStart(marker: Marker) {
+                                    isDragging = true
+                                }
+                                override fun onMarkerDrag(marker: Marker) {}
+                                override fun onMarkerDragEnd(marker: Marker) {
+                                    isDragging = false
+                                    onManualLocationChange?.invoke(marker.position.latitude, marker.position.longitude)
+                                }
+                            })
+                            mapView.overlays.add(manualMarker)
+                            manualMarker.position = GeoPoint(manualLat, manualLon)
+                            mapView.invalidate()
+                        }
+                        
+                        if (forceUpdate && !isDragging) {
+                            manualMarker.position = GeoPoint(manualLat, manualLon)
+                            mapView.invalidate()
+                        }
+
+                    } else if (!isManualGpsMode && location != null) {
+                        if (manualMarker != null) {
+                            mapView.overlays.remove(manualMarker)
+                        }
+                        
+                        val userPt = GeoPoint(location.latitude, location.longitude)
+                        if (userMarker == null) {
+                            userMarker = Marker(mapView)
+                            userMarker.title = "User"
+                            userMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_mylocation)
+                            mapView.overlays.add(userMarker)
+                        }
+                        userMarker.position = userPt
+                        mapView.invalidate()
                     } else {
-                        GeoPoint(40.892, 29.377)
-                    }
-                    controller.setCenter(centerPt)
-                }
-            },
-            update = { mapView ->
-                var manualMarker = mapView.overlays.find { it is Marker && it.title == "Manual" } as? Marker
-                var userMarker = mapView.overlays.find { it is Marker && it.title == "User" } as? Marker
-
-                val lastResetTrigger = mapView.tag as? Int ?: 0
-                val forceUpdate = resetTrigger != lastResetTrigger
-                if (forceUpdate) {
-                    mapView.tag = resetTrigger
-                }
-
-                if (isManualGpsMode && manualLat != null && manualLon != null) {
-                    if (userMarker != null) {
-                        mapView.overlays.remove(userMarker)
-                    }
-                    if (manualMarker == null) {
-                        manualMarker = Marker(mapView)
-                        manualMarker.title = "Manual"
-                        manualMarker.isDraggable = true
-                        manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
-                        manualMarker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                            override fun onMarkerDragStart(marker: Marker) {
-                                isDragging = true
-                            }
-                            override fun onMarkerDrag(marker: Marker) {}
-                            override fun onMarkerDragEnd(marker: Marker) {
-                                isDragging = false
-                                onManualLocationChange?.invoke(marker.position.latitude, marker.position.longitude)
-                            }
-                        })
-                        mapView.overlays.add(manualMarker)
-                        manualMarker.position = GeoPoint(manualLat, manualLon)
+                        if (manualMarker != null) mapView.overlays.remove(manualMarker)
+                        if (userMarker != null) mapView.overlays.remove(userMarker)
                         mapView.invalidate()
                     }
-                    
-                    if (forceUpdate && !isDragging) {
-                        manualMarker.position = GeoPoint(manualLat, manualLon)
-                        mapView.invalidate()
-                    }
+                }
+            )
 
-                } else if (!isManualGpsMode && location != null) {
-                    if (manualMarker != null) {
-                        mapView.overlays.remove(manualMarker)
+            if (isMinimap) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Surface(
+                        onClick = { mapViewInstance?.controller?.zoomIn() },
+                        modifier = Modifier.size(28.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = Color.White.copy(alpha = 0.8f),
+                        tonalElevation = 2.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = "Zoom In", modifier = Modifier.size(16.dp))
+                        }
                     }
-                    
-                    val userPt = GeoPoint(location.latitude, location.longitude)
-                    if (userMarker == null) {
-                        userMarker = Marker(mapView)
-                        userMarker.title = "User"
-                        userMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_mylocation)
-                        mapView.overlays.add(userMarker)
+                    Surface(
+                        onClick = { mapViewInstance?.controller?.zoomOut() },
+                        modifier = Modifier.size(28.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = Color.White.copy(alpha = 0.8f),
+                        tonalElevation = 2.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Remove, contentDescription = "Zoom Out", modifier = Modifier.size(16.dp))
+                        }
                     }
-                    userMarker.position = userPt
-                    mapView.invalidate()
-                } else {
-                    if (manualMarker != null) mapView.overlays.remove(manualMarker)
-                    if (userMarker != null) mapView.overlays.remove(userMarker)
-                    mapView.invalidate()
                 }
             }
-        )
+        }
     }
 }
 
