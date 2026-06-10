@@ -384,12 +384,24 @@ fun TourScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var latestImage by remember { mutableStateOf<ImageBitmap?>(null) }
+    var latestImageIndex by remember { mutableStateOf(-1) }
+    var scrollTrigger by remember { mutableStateOf(0) }
 
     val showMap = currentArea == "None"
 
-    LaunchedEffect(history.size, isLargeImageMode, showMap) {
+    LaunchedEffect(history) {
+        if (history.size <= 1) {
+            latestImage = null
+            latestImageIndex = -1
+        }
+    }
+
+    LaunchedEffect(history, isLargeImageMode, showMap, scrollTrigger) {
         if (history.isNotEmpty()) {
-            listState.animateScrollToItem(history.size - 1)
+            // Give layout a bit more time to settle, especially for mode switches
+            delay(150)
+            val totalItems = history.size + history.count { it.isUtterance }
+            listState.animateScrollToItem(totalItems - 1)
         }
     }
 
@@ -460,16 +472,14 @@ fun TourScreen(
                         state = listState,
                         modifier = Modifier
                             .padding(16.dp)
-                            .fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .fillMaxSize()
                     ) {
-                        itemsIndexed(history) { index, item ->
+                        history.forEachIndexed { index, item ->
                             val isLast = index == history.size - 1
                             val textColor = if (isLast) Color.Black else Color.DarkGray
 
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (item.isUtterance) {
-                                    // Expand if out of bounds OR if in small image mode
+                            if (item.isUtterance) {
+                                item {
                                     val isExpanded = item.showImage ?: (showMap || !isLargeImageMode)
                                     AssetUtteranceImage(
                                         location = item.location,
@@ -477,31 +487,28 @@ fun TourScreen(
                                         isExpanded = isExpanded,
                                         onToggle = { 
                                             tourManager.toggleImageForUtterance(index, isExpanded)
-                                            if (isLast && !isExpanded) {
-                                                coroutineScope.launch {
-                                                    delay(100)
-                                                    listState.animateScrollToItem(history.size - 1)
-                                                }
-                                            }
+                                            scrollTrigger++
                                         },
                                         onImageLoaded = { bitmap ->
-                                            latestImage = bitmap
-                                            if (isLast) {
-                                                coroutineScope.launch {
-                                                    delay(100)
-                                                    listState.animateScrollToItem(history.size - 1)
-                                                }
+                                            if (index >= latestImageIndex) {
+                                                latestImage = bitmap
+                                                latestImageIndex = index
                                             }
+                                            scrollTrigger++
                                         }
                                     )
+                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
+                            }
 
+                            item {
                                 Text(
                                     text = item.text,
                                     fontSize = 18.sp,
                                     fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
                                     color = textColor
                                 )
+                                Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
                     }
