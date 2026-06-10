@@ -24,7 +24,7 @@ The experiment takes place on the Sabanci University campus; starting at amphith
 ### Phase 1: Amphitheatre
 **Action:** The participant walks along a downhill path into the Amphitheatre POI geofence. The app transitions from Map Display to Cultural Heritage Content.
 
-**Expected State:** Heart rate is near baseline; gait is regular; microphone detects ambient noise below the 400.0 RMS threshold; blink rate is normal.
+**Expected State:** Heart rate is near baseline; gait is regular; microphone detects ambient noise below the 400.0 RMS threshold.
 
 **System Response:** CL is calculated as **Low**.
 
