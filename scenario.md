@@ -22,7 +22,7 @@ b. *Experimental (Auto Mode):* System dynamically adjusts script complexity (inf
 The experiment takes place on the Sabanci University campus; starting at amphitheatre, going through graduation memorial and ending at Tosun Terzioglu Garden. GPS Geofencing triggers Cultural Heritage Content when at a POI.
 
 ### Phase 1: Amphitheatre
-**Action:** The participant walks along a flat path into the FASS Amphitheatre POI geofence. The app transitions from Map Display to Cultural Heritage Content.
+**Action:** The participant walks along a downhill path into the Amphitheatre POI geofence. The app transitions from Map Display to Cultural Heritage Content.
 
 **Expected State:** Heart rate is near baseline; gait is regular; microphone detects ambient noise below the 400.0 RMS threshold; blink rate is normal.
 

@@ -1,9 +1,4 @@
-- SELIM MAIL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-+ Add GPS with waterline
-    + test this
-
-+ Check if it runs in the background
+- toplantı belirle
 
 - Add actual multimodality (images)
     + finding images
@@ -13,20 +8,9 @@
     - Define how the map box interacts with the image layout modes
     + map display
 
-+ Fact check the content, change accordingly
-    + The memorial is an actual memorial not a lake
-
-
 - Make the TTS generation slow by default and speed it up when needed
 
 - Add logging for everything
-
-- When features are finalised, update the test scenario.
-
-+ Eye tracking / pupil size tracking attempt
-
-+ User centered UI
-    + add a play button
 
 - Test informally
 
@@ -39,3 +23,24 @@
 
 - ISMAR
 
+
+
+
+DONE:
+
++ SELIM MAIL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
++ Add GPS with waterline
+    + test this
+
++ Check if it runs in the background
+
++ Fact check the content, change accordingly
+    + The memorial is an actual memorial not a lake
+
++ When features are finalised, update the test scenario.
+
++ Eye tracking / pupil size tracking attempt
+
++ User centered UI
+    + add a play button
