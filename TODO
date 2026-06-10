@@ -1,23 +1,19 @@
 - toplantı belirle
 
-- Add actual multimodality (images)
-    + finding images
-    - multimodal content selection (switch between the image layout modes depending on context)
-    + big and small image modes
-        - add gallery-like swiping to big picture mode
-    - Define how the map box interacts with the image layout modes
-    + map display
-
-- Make the TTS generation slow by default and speed it up when needed
-
-- Add logging for everything
-
-- Test informally
-
 - Hoca için sunum hazırlamak
     + data flow diagram
     - screenshots
     - index
+
+- add gallery-like swiping to big picture mode
+
+- add smooth transition animations
+
+- fix flickering issues and maybe add debounce
+
+- Add logging for everything
+
+- Test informally
 
 - Test formally
 
@@ -44,3 +40,10 @@ DONE:
 
 + User centered UI
     + add a play button
+
++ Add actual multimodality (images)
+    + finding images
+    + multimodal content selection (switch between the image layout modes depending on context)
+    + big and small image modes
+    + Define how the map box interacts with the image layout modes
+    + map display
