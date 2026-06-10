@@ -214,6 +214,30 @@ fun MainAppScreen(
         }
     }
 
+    val hrValue by bleManager.heartRate.collectAsState()
+    val rrIntervals by bleManager.rrIntervals.collectAsState()
+    val isSpeaking by voiceManager.isSpeaking.collectAsState()
+    
+    var features by remember { mutableStateOf<GaitFeatures?>(null) }
+    var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
+
+    LaunchedEffect(rrIntervals) {
+        analyzer.addRRIntervals(rrIntervals)
+    }
+
+    LaunchedEffect(isSpeaking) {
+        while (true) {
+            try {
+                features = analyzer.analyze(hrValue, isSpeaking)
+                stepIntervals = analyzer.getStepIntervals()
+                tourManager.updateContext(features?.loadLevel ?: "Waiting...", isSpeaking)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            delay(1000) // Update every second
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         TabRow(
             selectedTabIndex = selectedTabIndex,
@@ -245,6 +269,8 @@ fun MainAppScreen(
                 manualLon = manualLon
             )
             1 -> GaitApp(
+                features = features,
+                stepIntervals = stepIntervals,
                 analyzer = analyzer, 
                 bleManager = bleManager, 
                 voiceManager = voiceManager, 
@@ -524,6 +550,8 @@ fun TourScreen(
 
 @Composable
 fun GaitApp(
+    features: GaitFeatures?,
+    stepIntervals: List<Float>,
     analyzer: GaitAnalyzer, 
     bleManager: BleHeartRateManager, 
     voiceManager: VoiceSensorManager, 
@@ -535,10 +563,7 @@ fun GaitApp(
     manualLon: Double? = null,
     location: android.location.Location? = null
 ) {
-    var features by remember { mutableStateOf<GaitFeatures?>(null) }
-    var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
     val hrValue by bleManager.heartRate.collectAsState()
-    val rrIntervals by bleManager.rrIntervals.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
     val isCooldown by voiceManager.isCooldown.collectAsState()
@@ -554,23 +579,6 @@ fun GaitApp(
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     
     val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
-    
-    LaunchedEffect(rrIntervals) {
-        analyzer.addRRIntervals(rrIntervals)
-    }
-
-    LaunchedEffect(isSpeaking) {
-        while (true) {
-            try {
-                features = analyzer.analyze(hrValue, isSpeaking)
-                stepIntervals = analyzer.getStepIntervals()
-                tourManager.updateContext(features?.loadLevel ?: "Waiting...", isSpeaking)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            delay(1000) // Update every second
-        }
-    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
