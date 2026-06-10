@@ -528,6 +528,28 @@ fun TourScreen(
                     }
                 }
             }
+
+            // Minimap overlay when NOT in "None" area (not out of bounds)
+            if (!showMap) {
+                Card(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .size(120.dp)
+                        .align(Alignment.TopEnd),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    OsmMapPreview(
+                        location = location,
+                        isManualGpsMode = isManualGpsMode,
+                        manualLat = manualLat,
+                        manualLon = manualLon,
+                        resetTrigger = resetTrigger,
+                        onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
         
         // Control Bar
