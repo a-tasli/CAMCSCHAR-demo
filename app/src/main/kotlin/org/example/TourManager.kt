@@ -272,16 +272,22 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                     ttsManager.setSpeed(1.0f)
                     currentDelay = 0L
                     _isDetailed.value = true
+                    _isLargeImageMode.value = false
                 }
                 "Medium" -> {
                     ttsManager.setSpeed(0.75f)
                     currentDelay = 1500L
                     _isDetailed.value = true
+                    _isLargeImageMode.value = true
                 }
                 "High" -> {
                     ttsManager.setSpeed(0.75f)
                     currentDelay = 1500L
                     _isDetailed.value = false
+                    _isLargeImageMode.value = true
+                }
+                "Overload" -> {
+                    _isLargeImageMode.value = true
                 }
             }
             
