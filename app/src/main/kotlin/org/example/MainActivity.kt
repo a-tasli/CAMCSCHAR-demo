@@ -385,7 +385,7 @@ fun TourScreen(
 
     val showMap = currentArea == "None"
 
-    LaunchedEffect(history.size) {
+    LaunchedEffect(history.size, isLargeImageMode) {
         if (history.isNotEmpty()) {
             listState.animateScrollToItem(history.size - 1)
         }
@@ -400,7 +400,39 @@ fun TourScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Top half: Text Box
+                // Determine order based on mode
+                val showImageBoxFirst = isLargeImageMode && !showMap
+
+                if (showImageBoxFirst) {
+                    // Large Image Box on top
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0E0E0))
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            if (latestImage != null) {
+                                Image(
+                                    bitmap = latestImage!!,
+                                    contentDescription = "Latest Utterance Image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(
+                                    text = "Large Image Placeholder\nWaiting for image...",
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Text Box
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -419,13 +451,6 @@ fun TourScreen(
                             val textColor = if (isLast) Color.Black else Color.DarkGray
 
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = item.text,
-                                    fontSize = 18.sp,
-                                    fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
-                                    color = textColor
-                                )
-                                
                                 if (item.isUtterance) {
                                     val isExpanded = item.showImage ?: !isLargeImageMode
                                     AssetUtteranceImage(
@@ -452,12 +477,19 @@ fun TourScreen(
                                         }
                                     )
                                 }
+
+                                Text(
+                                    text = item.text,
+                                    fontSize = 18.sp,
+                                    fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                                    color = textColor
+                                )
                             }
                         }
                     }
                 }
 
-                // Bottom half: Map or Large Image Box
+                // Map or Large Image Box (if not already shown on top)
                 if (showMap) {
                     OsmMapPreview(
                         location = location, 
@@ -468,7 +500,7 @@ fun TourScreen(
                         onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
                         modifier = Modifier.fillMaxWidth().weight(0.6f)
                     )
-                } else if (isLargeImageMode) {
+                } else if (!showImageBoxFirst && isLargeImageMode) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
