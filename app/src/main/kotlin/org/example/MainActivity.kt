@@ -60,7 +60,7 @@ import androidx.compose.material.icons.filled.Pause
 
 class MainActivity : ComponentActivity() {
 
-    private val analyzer = GaitAnalyzer()
+    private lateinit var analyzer: GaitAnalyzer
     private lateinit var sensorManager: GaitSensorManager
     private lateinit var bleManager: BleHeartRateManager
     private lateinit var voiceManager: VoiceSensorManager
@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
         Configuration.getInstance().userAgentValue = packageName
         
+        analyzer = GaitAnalyzer(this)
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
         voiceManager = VoiceSensorManager()
@@ -805,6 +806,21 @@ fun GaitApp(
             StepIntervalGraph(stepIntervals)
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Fuzzy Logic (FIS) Monitor",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+
+            ParameterRow("FIS Input: Gait Load", String.format(Locale.US, "%.1f", features?.gaitLoadIndex ?: 0.0))
+            ParameterRow("FIS Input: HR Load", String.format(Locale.US, "%.1f", features?.hrLoadIndex ?: 0.0))
+            ParameterRow("FIS Input: Voice Score", String.format(Locale.US, "%.1f", features?.voiceScore ?: 0.0))
+            ParameterRow("FIS Defuzzified Output", String.format(Locale.US, "%.1f", features?.combinedLoadIndex ?: 0.0))
+            ParameterRow("Hysteresis State", features?.loadLevel ?: "Waiting...")
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "Inner Workings (Gait Parameters)",

@@ -1,0 +1,63 @@
+FUNCTION_BLOCK cognitive_load
+
+VAR_INPUT
+    GaitLoad : REAL;
+    HRLoad : REAL;
+    VoiceActivity : REAL;
+END_VAR
+
+VAR_OUTPUT
+    CognitiveLoad : REAL;
+END_VAR
+
+FUZZIFY GaitLoad
+    TERM Stable := (0, 1) (30, 1) (50, 0);
+    TERM Irregular := (30, 0) (50, 1) (70, 0);
+    TERM Erratic := (50, 0) (70, 1) (100, 1);
+END_FUZZIFY
+
+FUZZIFY HRLoad
+    TERM Resting := (0, 1) (30, 1) (50, 0);
+    TERM Elevated := (30, 0) (50, 1) (70, 0);
+    TERM Stressed := (50, 0) (70, 1) (100, 1);
+END_FUZZIFY
+
+FUZZIFY VoiceActivity
+    TERM Quiet := (0, 1) (0.2, 1) (0.5, 0);
+    TERM Speaking := (0.2, 0) (0.5, 1) (1, 1);
+END_FUZZIFY
+
+DEFUZZIFY CognitiveLoad
+    TERM Low := (0, 1) (25, 1) (45, 0);
+    TERM Medium := (30, 0) (50, 1) (70, 0);
+    TERM High := (55, 0) (75, 1) (90, 0);
+    TERM Overload := (80, 0) (95, 1) (100, 1);
+    METHOD : COG;
+    DEFAULT := 0;
+END_DEFUZZIFY
+
+RULEBLOCK No1
+    AND : MIN;
+    OR : MAX;
+    ACT : MIN;
+    ACCU : MAX;
+
+    RULE 1 : IF VoiceActivity IS Speaking THEN CognitiveLoad IS Overload;
+    
+    // Stable Gait
+    RULE 2 : IF GaitLoad IS Stable AND HRLoad IS Resting THEN CognitiveLoad IS Low;
+    RULE 3 : IF GaitLoad IS Stable AND HRLoad IS Elevated THEN CognitiveLoad IS Medium;
+    RULE 4 : IF GaitLoad IS Stable AND HRLoad IS Stressed THEN CognitiveLoad IS High;
+    
+    // Irregular Gait
+    RULE 5 : IF GaitLoad IS Irregular AND HRLoad IS Resting THEN CognitiveLoad IS Medium;
+    RULE 6 : IF GaitLoad IS Irregular AND HRLoad IS Elevated THEN CognitiveLoad IS Medium;
+    RULE 7 : IF GaitLoad IS Irregular AND HRLoad IS Stressed THEN CognitiveLoad IS High;
+    
+    // Erratic Gait
+    RULE 8 : IF GaitLoad IS Erratic AND HRLoad IS Resting THEN CognitiveLoad IS Medium;
+    RULE 9 : IF GaitLoad IS Erratic AND HRLoad IS Elevated THEN CognitiveLoad IS High;
+    RULE 10 : IF GaitLoad IS Erratic AND HRLoad IS Stressed THEN CognitiveLoad IS High;
+END_RULEBLOCK
+
+END_FUNCTION_BLOCK

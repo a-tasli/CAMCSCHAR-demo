@@ -1,5 +1,8 @@
 package org.example
 
+import android.content.Context
+import com.fuzzylite.Engine
+import com.fuzzylite.imex.FclImporter
 import kotlin.math.sqrt
 import kotlin.math.pow
 import kotlin.math.min
@@ -15,12 +18,25 @@ data class GaitFeatures(
     val rmssd: Double,
     val gaitLoadIndex: Double?,
     val hrLoadIndex: Double?,
+    val voiceScore: Double,
     val combinedLoadIndex: Double?,
     val loadLevel: String,
     val isWalking: Boolean
 )
 
-class GaitAnalyzer {
+class GaitAnalyzer(private val context: Context) {
+
+    private var engine: Engine? = null
+
+    init {
+        try {
+            val fclStream = context.assets.open("cognitive_load.fcl")
+            val fclString = fclStream.bufferedReader().use { it.readText() }
+            engine = FclImporter().fromString(fclString)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     // Store step timestamps in nanoseconds. We'll keep the last 20 steps.
     private val stepTimestamps = mutableListOf<Long>()
@@ -57,6 +73,8 @@ class GaitAnalyzer {
         }
         return intervals
     }
+
+    private var lastLoadLevel = "Low"
 
     @Synchronized
     fun analyze(currentHr: Int?, isSpeaking: Boolean = false): GaitFeatures? {
@@ -130,29 +148,67 @@ class GaitAnalyzer {
         if (!isWalking) {
             gaitLoadIndex = 25.0
         }
+        
+        // Voice Activity percentage mock (0.0 to 1.0)
+        val voiceScore = if (isSpeaking) 0.8 else 0.0
 
-        val combinedLoadIndex = if (gaitLoadIndex != null && hrLoadIndex != null) {
-            (gaitLoadIndex + hrLoadIndex) / 2.0
-        } else {
-            gaitLoadIndex ?: hrLoadIndex
-        }
-
+        var combinedLoadIndex: Double? = null
         var finalLevel = "Waiting..."
-        if (combinedLoadIndex != null) {
-            val baseLevel = when {
-                combinedLoadIndex < 50.0 -> "Low"
-                combinedLoadIndex < 100.0 -> "Medium"
-                else -> "High"
+
+        if (gaitLoadIndex != null && hrLoadIndex != null && engine != null) {
+            try {
+                engine!!.setInputValue("GaitLoad", gaitLoadIndex!!)
+                engine!!.setInputValue("HRLoad", hrLoadIndex!!)
+                engine!!.setInputValue("VoiceActivity", voiceScore)
+                
+                engine!!.process()
+                
+                combinedLoadIndex = engine!!.getOutputValue("CognitiveLoad")
+
+                // Hysteresis buffer for fuzzy logic
+                val cIndex = combinedLoadIndex!!
+                finalLevel = when (lastLoadLevel) {
+                    "Low" -> if (cIndex > 45.0) "Medium" else "Low"
+                    "Medium" -> {
+                        if (cIndex < 35.0) "Low"
+                        else if (cIndex > 75.0) "High"
+                        else "Medium"
+                    }
+                    "High" -> {
+                        if (cIndex < 65.0) "Medium"
+                        else if (cIndex > 95.0) "Overload"
+                        else "High"
+                    }
+                    "Overload" -> if (cIndex < 85.0) "High" else "Overload"
+                    else -> "Medium"
+                }
+                lastLoadLevel = finalLevel
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            // Fallback if FIS fails or is warming up
+            combinedLoadIndex = if (gaitLoadIndex != null && hrLoadIndex != null) {
+                (gaitLoadIndex + hrLoadIndex) / 2.0
+            } else {
+                gaitLoadIndex ?: hrLoadIndex
             }
 
-            finalLevel = baseLevel
-            // Adjust level if voice activity is detected
-            if (isSpeaking) {
-                finalLevel = when (baseLevel) {
-                    "Low" -> "Medium"
-                    "Medium" -> "High"
-                    "High" -> "Overload"
-                    else -> baseLevel
+            if (combinedLoadIndex != null) {
+                val baseLevel = when {
+                    combinedLoadIndex < 50.0 -> "Low"
+                    combinedLoadIndex < 100.0 -> "Medium"
+                    else -> "High"
+                }
+
+                finalLevel = baseLevel
+                if (isSpeaking) {
+                    finalLevel = when (baseLevel) {
+                        "Low" -> "Medium"
+                        "Medium" -> "High"
+                        "High" -> "Overload"
+                        else -> baseLevel
+                    }
                 }
             }
         }
@@ -167,6 +223,7 @@ class GaitAnalyzer {
             rmssd = rmssd,
             gaitLoadIndex = gaitLoadIndex,
             hrLoadIndex = hrLoadIndex,
+            voiceScore = voiceScore,
             combinedLoadIndex = combinedLoadIndex,
             loadLevel = finalLevel,
             isWalking = isWalking
