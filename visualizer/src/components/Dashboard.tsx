@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -14,6 +14,30 @@ export default function Dashboard() {
   const [data, setData] = useState<any[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(100);
+
+  useEffect(() => {
+    fetch('/api/latest')
+      .then(res => {
+        if (!res.ok) throw new Error('No data');
+        return res.json();
+      })
+      .then(json => {
+        if (Array.isArray(json)) {
+          const processed = json.map(item => {
+            const d = new Date(item.timestamp);
+            return {
+              ...item,
+              timeLabel: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              timeMs: d.getTime()
+            };
+          });
+          setData(processed);
+          setVisibleCount(100);
+          setFileName('Latest uploaded from App');
+        }
+      })
+      .catch(err => console.log('No latest data available yet'));
+  }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const bottom = e.currentTarget.scrollHeight - e.currentTarget.scrollTop <= e.currentTarget.clientHeight + 50;

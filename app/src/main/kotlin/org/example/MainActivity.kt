@@ -196,6 +196,22 @@ fun MainAppScreen(
     val tabs = listOf("Tour", "Debug")
     val location by locationSensorManager.location.collectAsState()
     
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPreferences = context.getSharedPreferences("CAMCSCHAR_PREFS", android.content.Context.MODE_PRIVATE)
+    var serverUrl by remember { mutableStateOf(sharedPreferences.getString("server_url", "http://192.168.1.5:3000") ?: "http://192.168.1.5:3000") }
+    val coroutineScope = rememberCoroutineScope()
+    val currentServerUrl by rememberUpdatedState(serverUrl)
+    
+    LaunchedEffect(Unit) {
+        tourManager.stopAndUploadTrigger.collect {
+            if (dataManager.isRecording) {
+                dataManager.stopRecording()
+                val success = dataManager.uploadLatestFile(currentServerUrl)
+                android.widget.Toast.makeText(context, if (success) "Auto-upload successful" else "Auto-upload failed", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
     val isManualGpsMode by tourManager.isManualGpsMode.collectAsState()
     val manualLat by tourManager.manualLocationLat.collectAsState()
     val manualLon by tourManager.manualLocationLon.collectAsState()
@@ -210,14 +226,12 @@ fun MainAppScreen(
     }
     
     val isPlaying by tourManager.isPlaying.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
             TourService.startService(context)
             dataManager.startRecording()
         } else {
             TourService.stopService(context)
-            dataManager.stopRecording()
         }
     }
 
@@ -302,7 +316,18 @@ fun MainAppScreen(
                 isManualGpsMode = isManualGpsMode,
                 manualLat = manualLat,
                 manualLon = manualLon,
-                location = location
+                location = location,
+                serverUrl = serverUrl,
+                onServerUrlChange = { 
+                    serverUrl = it 
+                    sharedPreferences.edit().putString("server_url", it).apply()
+                },
+                onUploadClicked = {
+                    coroutineScope.launch {
+                        val success = dataManager.uploadLatestFile(serverUrl)
+                        android.widget.Toast.makeText(context, if (success) "Upload successful" else "Upload failed", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
             )
         }
     }
@@ -624,7 +649,10 @@ fun GaitApp(
     isManualGpsMode: Boolean = false,
     manualLat: Double? = null,
     manualLon: Double? = null,
-    location: android.location.Location? = null
+    location: android.location.Location? = null,
+    serverUrl: String = "",
+    onServerUrlChange: (String) -> Unit = {},
+    onUploadClicked: () -> Unit = {}
 ) {
     val hrValue by bleManager.heartRate.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
@@ -760,6 +788,22 @@ fun GaitApp(
                         color = Color.DarkGray,
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = serverUrl,
+                            onValueChange = onServerUrlChange,
+                            label = { Text("Visualizer Server URL") },
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        )
+                        Button(onClick = onUploadClicked) {
+                            Text("Upload Last")
+                        }
+                    }
                 }
             }
 

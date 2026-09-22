@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,6 +69,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     private val _manualGpsResetTrigger = MutableStateFlow(0)
     val manualGpsResetTrigger: StateFlow<Int> = _manualGpsResetTrigger.asStateFlow()
+
+    private val _stopAndUploadTrigger = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val stopAndUploadTrigger = _stopAndUploadTrigger.asSharedFlow()
 
     fun setManualGpsMode(enabled: Boolean, defaultLat: Double?, defaultLon: Double?) {
         _isManualGpsMode.value = enabled
@@ -146,6 +150,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                             playCurrentIndexWithDelay()
                         } else {
                             _isPlaying.value = false
+                            guideFinished = true
+                            _stopAndUploadTrigger.tryEmit(Unit)
                             val updatedHistory = _history.value.toMutableList()
                             updatedHistory.add(HistoryItem(text = "Tour finished.", isUtterance = false))
                             _history.value = updatedHistory
@@ -221,6 +227,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     fun resetTour() {
+        _stopAndUploadTrigger.tryEmit(Unit)
         delayJob?.cancel()
         ttsManager.stop()
         _isPlaying.value = false

@@ -1,22 +1,25 @@
 import { NextResponse } from 'next/server';
-
-// In-memory store for the uploaded data (in a real app, this would be a database)
-// We export this so other routes or server components could theoretically read it, 
-// though Next.js App Router isolates this per-request in edge runtime unless cached. 
-// For this simple demo, we will just echo it back or rely on client-side state.
+import fs from 'fs';
+import path from 'path';
 
 export async function POST(request: Request) {
   try {
     const data = await request.json();
     
-    // In a production academic tool, you would save this to a Postgres database
-    // or S3 bucket here.
+    const dataDir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    
+    const filePath = path.join(dataDir, 'latest_experiment.json');
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
     
     return NextResponse.json({ 
       message: 'Data uploaded successfully',
       count: Array.isArray(data) ? data.length : 1 
     }, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Upload error:", error);
     return NextResponse.json({ error: 'Failed to process data' }, { status: 400 });
   }
 }

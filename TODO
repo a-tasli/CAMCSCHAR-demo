@@ -1,3 +1,5 @@
+- fix bug with tts lagging behing the displayed script line when clicking next button
+
 - add gallery-like swiping inside big picture mode
 
 - add smooth transition animations

@@ -105,4 +105,40 @@ class ExperimentDataManager(private val context: Context) {
             Log.e("ExperimentDataManager", "Error saving data: ${e.message}")
         }
     }
+
+    suspend fun uploadLatestFile(urlStr: String): Boolean = withContext(Dispatchers.IO) {
+        var fileToUpload = currentFile
+        if (fileToUpload == null || !fileToUpload.exists()) {
+            val files = context.getExternalFilesDir(null)?.listFiles { file -> 
+                file.name.startsWith("experiment_") && file.name.endsWith(".json")
+            }
+            if (files.isNullOrEmpty()) return@withContext false
+            fileToUpload = files.maxByOrNull { it.lastModified() }
+        }
+        
+        if (fileToUpload == null || !fileToUpload.exists()) return@withContext false
+        
+        try {
+            val fileContent = fileToUpload.readText()
+            val finalUrlStr = if(urlStr.endsWith("/api/upload")) urlStr else "$urlStr/api/upload"
+            val url = java.net.URL(finalUrlStr)
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json; utf-8")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.doOutput = true
+            
+            connection.outputStream.use { os ->
+                val input = fileContent.toByteArray(Charsets.UTF_8)
+                os.write(input, 0, input.size)
+            }
+            
+            val code = connection.responseCode
+            return@withContext code == 200 || code == 201
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("ExperimentDataManager", "Upload failed: ${e.message}")
+            return@withContext false
+        }
+    }
 }
