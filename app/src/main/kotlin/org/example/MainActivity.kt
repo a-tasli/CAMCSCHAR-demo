@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var ttsManager: TTSManager
     private lateinit var tourManager: TourManager
     private lateinit var blinkSensorManager: BlinkSensorManager
+    private lateinit var dataManager: ExperimentDataManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -93,13 +94,14 @@ class MainActivity : ComponentActivity() {
         ttsManager = TTSManager(this)
         tourManager = TourManager(this, ttsManager)
         blinkSensorManager = BlinkSensorManager(this)
+        dataManager = ExperimentDataManager(this)
         
         checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
                 Surface(color = Color.White) {
-                    MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager)
+                    MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager, dataManager)
                 }
             }
         }
@@ -187,7 +189,8 @@ fun MainAppScreen(
     voiceManager: VoiceSensorManager, 
     locationSensorManager: LocationSensorManager,
     tourManager: TourManager,
-    blinkSensorManager: BlinkSensorManager
+    blinkSensorManager: BlinkSensorManager,
+    dataManager: ExperimentDataManager
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Tour", "Debug")
@@ -211,8 +214,10 @@ fun MainAppScreen(
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
             TourService.startService(context)
+            dataManager.startRecording()
         } else {
             TourService.stopService(context)
+            dataManager.stopRecording()
         }
     }
 
@@ -233,6 +238,21 @@ fun MainAppScreen(
                 features = analyzer.analyze(hrValue, isSpeaking)
                 stepIntervals = analyzer.getStepIntervals()
                 tourManager.updateContext(features?.loadLevel ?: "Waiting...", isSpeaking)
+                
+                dataManager.recordData(
+                    hr = hrValue,
+                    hrv = features?.rmssd ?: 0.0,
+                    stepVariance = features?.stepTimeVariability ?: 0.0,
+                    isSpeaking = isSpeaking,
+                    lat = effectiveLat,
+                    lon = effectiveLon,
+                    poi = tourManager.currentArea.value,
+                    loadLevel = features?.loadLevel ?: "Waiting...",
+                    isAutoMode = tourManager.isAutoMode.value,
+                    isDetailed = tourManager.isDetailed.value,
+                    isLargeImageMode = tourManager.isLargeImageMode.value,
+                    scriptLine = tourManager.currentIndex + 1
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }

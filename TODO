@@ -1,11 +1,4 @@
-- toplantı belirle
-
-- Hoca için sunum hazırlamak
-    + data flow diagram
-    - screenshots
-    - index
-
-- add gallery-like swiping to big picture mode
+- add gallery-like swiping inside big picture mode
 
 - add smooth transition animations
 
@@ -16,8 +9,6 @@
 - Test informally
 
 - Test formally
-
-- ISMAR
 
 
 

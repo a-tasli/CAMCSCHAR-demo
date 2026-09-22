@@ -35,7 +35,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val _currentArea = MutableStateFlow("None")
     val currentArea: StateFlow<String> = _currentArea.asStateFlow()
 
-    private var currentIndex = 0
+    var currentIndex = 0
+        private set
     private var maxIndex = 0
     private var currentUtteranceId: String? = null
 

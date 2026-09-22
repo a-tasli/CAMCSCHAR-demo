@@ -1,0 +1,108 @@
+package org.example
+
+import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileWriter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.Objects
+
+class ExperimentDataManager(private val context: Context) {
+    private var dataArray = JSONArray()
+    private var lastRecordedStateHash: Int = 0
+    private var lastRecordTime: Long = 0
+    
+    private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US)
+    private var currentFile: File? = null
+    var isRecording = false
+        private set
+
+    fun startRecording() {
+        if (isRecording) return
+        dataArray = JSONArray()
+        val filename = "experiment_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.json"
+        currentFile = File(context.getExternalFilesDir(null), filename)
+        isRecording = true
+        Log.d("ExperimentDataManager", "Started recording to ${currentFile?.absolutePath}")
+    }
+
+    fun stopRecording() {
+        if (!isRecording) return
+        saveToFile()
+        isRecording = false
+        Log.d("ExperimentDataManager", "Stopped recording.")
+    }
+
+    suspend fun recordData(
+        hr: Int?,
+        hrv: Double, // Using rmssd
+        stepVariance: Double,
+        isSpeaking: Boolean,
+        lat: Double?,
+        lon: Double?,
+        poi: String,
+        loadLevel: String,
+        isAutoMode: Boolean,
+        isDetailed: Boolean,
+        isLargeImageMode: Boolean,
+        scriptLine: Int
+    ) = withContext(Dispatchers.IO) {
+        if (!isRecording) return@withContext
+
+        val currentTime = System.currentTimeMillis()
+        
+        // Hash the state parameters to detect changes
+        val stateHash = Objects.hash(poi, loadLevel, isAutoMode, isDetailed, isLargeImageMode, isSpeaking, scriptLine)
+        
+        val isStateChange = stateHash != lastRecordedStateHash
+        val isPeriodic = currentTime - lastRecordTime >= 1000
+        
+        if (isStateChange || isPeriodic) {
+            val obj = JSONObject().apply {
+                put("timestamp", dateFormat.format(Date(currentTime)))
+                put("hr", hr ?: JSONObject.NULL)
+                put("hrv_rmssd", hrv)
+                put("step_variance", stepVariance)
+                put("is_speaking", isSpeaking)
+                put("lat", lat ?: JSONObject.NULL)
+                put("lon", lon ?: JSONObject.NULL)
+                put("poi", poi)
+                put("load_level", loadLevel)
+                put("is_auto_mode", isAutoMode)
+                put("is_detailed_script", isDetailed)
+                put("is_large_image_mode", isLargeImageMode)
+                put("script_line", scriptLine)
+                put("trigger", if (isStateChange) "event" else "periodic")
+            }
+            
+            dataArray.put(obj)
+            lastRecordedStateHash = stateHash
+            lastRecordTime = currentTime
+            
+            // Periodically save to file to avoid data loss
+            if (dataArray.length() % 5 == 0 || isStateChange) {
+                saveToFile()
+            }
+        }
+    }
+
+    private fun saveToFile() {
+        try {
+            currentFile?.let {
+                val writer = FileWriter(it, false)
+                writer.write(dataArray.toString(2))
+                writer.flush()
+                writer.close()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("ExperimentDataManager", "Error saving data: ${e.message}")
+        }
+    }
+}
