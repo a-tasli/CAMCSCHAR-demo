@@ -56,7 +56,7 @@ export default function Map({ data }: MapProps) {
             <Popup>
               <strong>{new Date(d.timestamp).toLocaleTimeString()}</strong><br/>
               POI: {d.poi}<br/>
-              Load: {d.load_level}<br/>
+              Load: {d.load_level} {d.combined_load_index ? `(${d.combined_load_index.toFixed(2)})` : ''}<br/>
               Trigger: {d.trigger}
             </Popup>
           </Marker>

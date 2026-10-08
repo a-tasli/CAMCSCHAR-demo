@@ -48,6 +48,7 @@ class ExperimentDataManager(private val context: Context) {
         lon: Double?,
         poi: String,
         loadLevel: String,
+        combinedLoadIndex: Double?,
         isAutoMode: Boolean,
         isDetailed: Boolean,
         isLargeImageMode: Boolean,
@@ -58,7 +59,7 @@ class ExperimentDataManager(private val context: Context) {
         val currentTime = System.currentTimeMillis()
         
         // Hash the state parameters to detect changes
-        val stateHash = Objects.hash(poi, loadLevel, isAutoMode, isDetailed, isLargeImageMode, isSpeaking, scriptLine)
+        val stateHash = Objects.hash(poi, loadLevel, combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode, isSpeaking, scriptLine)
         
         val isStateChange = stateHash != lastRecordedStateHash
         val isPeriodic = currentTime - lastRecordTime >= 1000
@@ -74,6 +75,7 @@ class ExperimentDataManager(private val context: Context) {
                 put("lon", lon ?: JSONObject.NULL)
                 put("poi", poi)
                 put("load_level", loadLevel)
+                put("combined_load_index", combinedLoadIndex ?: JSONObject.NULL)
                 put("is_auto_mode", isAutoMode)
                 put("is_detailed_script", isDetailed)
                 put("is_large_image_mode", isLargeImageMode)

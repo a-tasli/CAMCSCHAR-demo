@@ -95,7 +95,11 @@ export default function Dashboard() {
       
       if (isSpeakEvent) desc.push("User spoke");
       if (e.is_auto_mode) desc.push(`Auto Mode`);
-      desc.push(`Load: ${e.load_level}`);
+      if (e.combined_load_index != null) {
+        desc.push(`Load: ${e.load_level} (${e.combined_load_index.toFixed(2)})`);
+      } else {
+        desc.push(`Load: ${e.load_level}`);
+      }
       desc.push(`POI: ${e.poi}`);
 
       return {
@@ -148,6 +152,7 @@ export default function Dashboard() {
                   <Line yAxisId="left" type="monotone" dataKey="hr" name="Heart Rate (BPM)" stroke="#ef4444" strokeWidth={2} dot={false} />
                   <Line yAxisId="left" type="monotone" dataKey="hrv_rmssd" name="HRV (RMSSD)" stroke="#3b82f6" strokeWidth={2} dot={false} />
                   <Line yAxisId="right" type="monotone" dataKey="step_variance" name="Step Variance" stroke="#10b981" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="combined_load_index" name="Combined Load Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -188,6 +193,7 @@ export default function Dashboard() {
                   <th>HRV</th>
                   <th>Gait Var</th>
                   <th>Load Level</th>
+                  <th>Load Index</th>
                   <th>Script Line</th>
                   <th>POI</th>
                   <th>Trigger</th>
@@ -201,6 +207,7 @@ export default function Dashboard() {
                     <td>{d.hrv_rmssd ? d.hrv_rmssd.toFixed(2) : '-'}</td>
                     <td>{d.step_variance ? d.step_variance.toFixed(2) : '-'}</td>
                     <td><span className={`badge ${getBadgeClass(d.load_level)}`}>{d.load_level}</span></td>
+                    <td>{d.combined_load_index ? d.combined_load_index.toFixed(2) : '-'}</td>
                     <td>{d.script_line || '-'}</td>
                     <td>{d.poi.replace(/_/g, ' ')}</td>
                     <td>{d.trigger}</td>
