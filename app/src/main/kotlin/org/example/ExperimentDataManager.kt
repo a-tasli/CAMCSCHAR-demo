@@ -141,4 +141,27 @@ class ExperimentDataManager(private val context: Context) {
             return@withContext false
         }
     }
+    suspend fun saveLatestToDownloads(): Boolean = withContext(Dispatchers.IO) {
+        var fileToSave = currentFile
+        if (fileToSave == null || !fileToSave.exists()) {
+            val files = context.getExternalFilesDir(null)?.listFiles { file -> 
+                file.name.startsWith("experiment_") && file.name.endsWith(".json")
+            }
+            if (files.isNullOrEmpty()) return@withContext false
+            fileToSave = files.maxByOrNull { it.lastModified() }
+        }
+        
+        if (fileToSave == null || !fileToSave.exists()) return@withContext false
+        
+        try {
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val destFile = java.io.File(downloadsDir, fileToSave.name)
+            fileToSave.copyTo(destFile, overwrite = true)
+            return@withContext true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("ExperimentDataManager", "Save to downloads failed: ${e.message}")
+            return@withContext false
+        }
+    }
 }

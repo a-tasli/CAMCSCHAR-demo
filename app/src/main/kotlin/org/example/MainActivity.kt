@@ -327,6 +327,12 @@ fun MainAppScreen(
                         val success = dataManager.uploadLatestFile(serverUrl)
                         android.widget.Toast.makeText(context, if (success) "Upload successful" else "Upload failed", android.widget.Toast.LENGTH_SHORT).show()
                     }
+                },
+                onSaveToDownloadsClicked = {
+                    coroutineScope.launch {
+                        val success = dataManager.saveLatestToDownloads()
+                        android.widget.Toast.makeText(context, if (success) "Saved to Downloads" else "Save failed", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
         }
@@ -652,7 +658,8 @@ fun GaitApp(
     location: android.location.Location? = null,
     serverUrl: String = "",
     onServerUrlChange: (String) -> Unit = {},
-    onUploadClicked: () -> Unit = {}
+    onUploadClicked: () -> Unit = {},
+    onSaveToDownloadsClicked: () -> Unit = {}
 ) {
     val hrValue by bleManager.heartRate.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
@@ -789,19 +796,21 @@ fun GaitApp(
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
                     )
 
+                    androidx.compose.material3.OutlinedTextField(
+                        value = serverUrl,
+                        onValueChange = onServerUrlChange,
+                        label = { Text("Visualizer Server URL") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        androidx.compose.material3.OutlinedTextField(
-                            value = serverUrl,
-                            onValueChange = onServerUrlChange,
-                            label = { Text("Visualizer Server URL") },
-                            modifier = Modifier.weight(1f).padding(end = 8.dp)
-                        )
-                        Button(onClick = onUploadClicked) {
+                        Button(onClick = onUploadClicked, modifier = Modifier.weight(1f)) {
                             Text("Upload Last")
+                        }
+                        Button(onClick = onSaveToDownloadsClicked, modifier = Modifier.weight(1f)) {
+                            Text("Save to Downloads")
                         }
                     }
                 }
