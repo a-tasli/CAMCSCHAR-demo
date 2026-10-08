@@ -123,14 +123,10 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                 if (_currentLocation.value == "guide" || _currentLocation.value != poi.name) {
                     val wasPlaying = _isPlaying.value
                     selectLocation(poi.name)
-                    if (wasPlaying || _isAutoMode.value) {
+                    if (wasPlaying) {
                         _isPlaying.value = true
                         playCurrentIndexWithDelay()
                     }
-                } else if (_currentArea.value == "None" && _isAutoMode.value && !_isPlaying.value) {
-                    // Entered the current POI from outside (None) while in Auto Mode and not already playing
-                    _isPlaying.value = true
-                    playCurrentIndexWithDelay()
                 }
                 break
             }
@@ -150,10 +146,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                             playCurrentIndexWithDelay()
                         } else {
                             _isPlaying.value = false
-                            guideFinished = true
-                            _stopAndUploadTrigger.tryEmit(Unit)
                             val updatedHistory = _history.value.toMutableList()
-                            updatedHistory.add(HistoryItem(text = "Tour finished.", isUtterance = false))
+                            updatedHistory.add(HistoryItem(text = "End of script reached. Waiting for next location...", isUtterance = false))
                             _history.value = updatedHistory
                         }
                     }
@@ -226,24 +220,16 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         }
     }
 
-    fun resetTour() {
+    fun finishTour() {
         _stopAndUploadTrigger.tryEmit(Unit)
         delayJob?.cancel()
         ttsManager.stop()
         _isPlaying.value = false
-        guideFinished = false
+        guideFinished = true
         
-        val startLocation = if (_currentArea.value != "None") _currentArea.value else "guide"
-        _currentLocation.value = startLocation
-        loadScripts(startLocation)
-        
-        val welcomeText = if (startLocation == "guide") {
-            "Welcome to the Campus Tour! Press 'Start Tour' to begin."
-        } else {
-            "Welcome to the Campus Tour! You are currently at ${startLocation.replace('_', ' ')}. Press 'Start Tour' to begin."
-        }
-        
-        _history.value = listOf(HistoryItem(text = welcomeText, isUtterance = false))
+        val updatedHistory = _history.value.toMutableList()
+        updatedHistory.add(HistoryItem(text = "Tour finished.", isUtterance = false))
+        _history.value = updatedHistory
     }
 
     fun nextIndex() {
@@ -373,7 +359,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             // In case the scripts have different lengths
             _isPlaying.value = false
             val updatedHistory = _history.value.toMutableList()
-            updatedHistory.add(HistoryItem(text = "End of script reached.", isUtterance = false))
+            updatedHistory.add(HistoryItem(text = "End of script reached. Waiting for next location...", isUtterance = false))
             _history.value = updatedHistory
         }
     }

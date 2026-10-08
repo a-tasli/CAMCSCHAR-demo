@@ -50,7 +50,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import android.graphics.BitmapFactory
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
@@ -599,8 +599,8 @@ fun TourScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { tourManager.resetTour() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Reset Tour")
+                IconButton(onClick = { tourManager.finishTour() }) {
+                    Icon(Icons.Default.Done, contentDescription = "Finish Tour")
                 }
 
                 IconButton(onClick = { tourManager.prevIndex() }) {
