@@ -74,6 +74,6 @@ The experiment takes place on the Sabanci University campus; starting at amphith
 
 *   *Hypothesis:* NASA-TLX scores for mental/visual demand will be significantly lower in the Auto Mode condition.
 
-**Post-Tour Quiz:** A 10-question multiple-choice quiz covering key facts.
+**Post-Tour Quiz:** An 18-question multiple-choice quiz covering key facts (12 core facts and 6 detailed bonus questions).
 
 *   *Hypothesis:* Users in the Auto Mode will score higher on retention during high-load segments because the system dynamically shifted to a simplified script and reduced visual (and audio) clutter.
