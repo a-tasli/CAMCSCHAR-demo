@@ -210,14 +210,19 @@ fun MainAppScreen(
     var serverUrl by remember { mutableStateOf(sharedPreferences.getString("server_url", "http://192.168.1.5:3000") ?: "http://192.168.1.5:3000") }
     val coroutineScope = rememberCoroutineScope()
     val currentServerUrl by rememberUpdatedState(serverUrl)
+    var showSurvey by remember { mutableStateOf(false) }
     
     LaunchedEffect(Unit) {
-        tourManager.stopAndUploadTrigger.collect {
+        tourManager.tourFinishedEvent.collect {
             if (dataManager.isRecording) {
                 dataManager.stopRecording()
-                val success = dataManager.uploadLatestFile(currentServerUrl)
-                android.widget.Toast.makeText(context, if (success) "Auto-upload successful" else "Auto-upload failed", android.widget.Toast.LENGTH_SHORT).show()
             }
+            try {
+                TourService.stopService(context)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            showSurvey = true
         }
     }
     
@@ -302,12 +307,16 @@ fun MainAppScreen(
         }
     }
 
-    var showSurvey by remember { mutableStateOf(false) }
-
     if (showSurvey) {
         RetentionSurveyScreen(
             initialIsAutoMode = tourManager.isAutoMode.value,
             serverUrl = serverUrl,
+            dataManager = dataManager,
+            onSurveySubmitted = {
+                showSurvey = false
+                tourManager.resetAppState()
+                dataManager.resetState()
+            },
             onDismiss = { showSurvey = false }
         )
     } else {
@@ -687,9 +696,9 @@ fun TourScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { tourManager.finishTour() }) {
-                    Icon(Icons.Default.Done, contentDescription = "Finish Tour")
-                }
+                // IconButton(onClick = { tourManager.finishTour() }) {
+                //     Icon(Icons.Default.Done, contentDescription = "Finish Tour")
+                // }
 
                 IconButton(onClick = { tourManager.prevIndex() }) {
                     Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Previous")
@@ -938,6 +947,14 @@ fun GaitApp(
                             checked = isEndOfTourReached,
                             onCheckedChange = { tourManager.setEndOfTourReached(it) }
                         )
+                    }
+
+                    Button(
+                        onClick = { tourManager.finishTour() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+                    ) {
+                        Text("End Tour (Finish & Trigger Survey)")
                     }
 
                     Button(

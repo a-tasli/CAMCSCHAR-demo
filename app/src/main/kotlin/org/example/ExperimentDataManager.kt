@@ -108,6 +108,42 @@ class ExperimentDataManager(private val context: Context) {
         }
     }
 
+    fun getRecordedDataArray(): JSONArray {
+        if (dataArray.length() > 0) return dataArray
+        val fileToRead = currentFile ?: context.getExternalFilesDir(null)?.listFiles { file -> 
+            file.name.startsWith("experiment_") && file.name.endsWith(".json")
+        }?.maxByOrNull { it.lastModified() }
+        
+        if (fileToRead != null && fileToRead.exists()) {
+            try {
+                val content = fileToRead.readText()
+                val parsed = org.json.JSONTokener(content).nextValue()
+                if (parsed is JSONArray) return parsed
+                if (parsed is JSONObject) {
+                    if (parsed.has("experiment_data")) return parsed.getJSONArray("experiment_data")
+                    if (parsed.has("sensor_data")) return parsed.getJSONArray("sensor_data")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return JSONArray()
+    }
+
+    fun updateWithUnifiedData(unifiedJsonString: String) {
+        try {
+            currentFile?.let {
+                val writer = FileWriter(it, false)
+                writer.write(unifiedJsonString)
+                writer.flush()
+                writer.close()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("ExperimentDataManager", "Error updating file with unified data: ${e.message}")
+        }
+    }
+
     suspend fun uploadLatestFile(urlStr: String): Boolean = withContext(Dispatchers.IO) {
         var fileToUpload = currentFile
         if (fileToUpload == null || !fileToUpload.exists()) {
@@ -165,5 +201,13 @@ class ExperimentDataManager(private val context: Context) {
             Log.e("ExperimentDataManager", "Save to downloads failed: ${e.message}")
             return@withContext false
         }
+    }
+
+    fun resetState() {
+        isRecording = false
+        dataArray = JSONArray()
+        currentFile = null
+        lastRecordedStateHash = 0
+        lastRecordTime = 0
     }
 }

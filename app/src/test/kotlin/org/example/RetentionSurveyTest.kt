@@ -194,4 +194,59 @@ class RetentionSurveyTest {
         val expectedMean = (45 + 60 + 25 + 15 + 50 + 30) / 6.0
         assertEquals(expectedMean, result.meanNasaTlxScore)
     }
+
+    @Test
+    fun testUnifiedJsonStructure() {
+        val answers = mutableMapOf<Int, String>()
+        (1..20).forEach { answers[it] = "A" }
+
+        val tlxScores = mapOf(
+            "mental_demand" to 30,
+            "physical_demand" to 40,
+            "temporal_demand" to 20,
+            "performance" to 10,
+            "effort" to 25,
+            "frustration" to 15
+        )
+
+        val result = SurveyScorer.calculateScores(
+            answers = answers,
+            nasaTlxScores = tlxScores,
+            startTime = 1000L,
+            endTime = 10000L,
+            questionTimings = emptyMap()
+        )
+
+        val metadata = SurveyMetadata(
+            participantId = "P-Test",
+            condition = Condition.EXPERIMENTAL
+        )
+
+        val surveyJson = result.toJsonObject(metadata, answers)
+
+        val fakeExperimentData = org.json.JSONArray().apply {
+            put(org.json.JSONObject().apply {
+                put("timestamp", "2026-10-20T19:40:00.000+0300")
+                put("hr", 85)
+                put("hrv_rmssd", 40.0)
+                put("step_variance", 15.0)
+                put("poi", "tosun_terzioglu_garden")
+            })
+        }
+
+        val unifiedJson = org.json.JSONObject().apply {
+            put("participant_id", metadata.participantId)
+            put("condition", metadata.condition.label)
+            put("date_time", metadata.dateTime)
+            put("survey", surveyJson)
+            put("experiment_data", fakeExperimentData)
+        }
+
+        assertEquals("P-Test", unifiedJson.getString("participant_id"))
+        assertTrue(unifiedJson.has("survey"))
+        assertTrue(unifiedJson.has("experiment_data"))
+        assertEquals(1, unifiedJson.getJSONArray("experiment_data").length())
+        assertEquals(85, unifiedJson.getJSONArray("experiment_data").getJSONObject(0).getInt("hr"))
+        assertEquals(18, unifiedJson.getJSONObject("survey").getJSONObject("scores").getInt("max_retention_score"))
+    }
 }

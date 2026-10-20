@@ -73,6 +73,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val _stopAndUploadTrigger = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val stopAndUploadTrigger = _stopAndUploadTrigger.asSharedFlow()
 
+    private val _tourFinishedEvent = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val tourFinishedEvent = _tourFinishedEvent.asSharedFlow()
+
     val requiredPois = listOf("amphitheatre", "lake_memorial", "tosun_terzioglu_garden")
     private val _completedPois = MutableStateFlow<Set<String>>(emptySet())
     val completedPois: StateFlow<Set<String>> = _completedPois.asStateFlow()
@@ -82,6 +85,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     fun setEndOfTourReached(reached: Boolean) {
         _isEndOfTourReached.value = reached
+        if (reached) {
+            _tourFinishedEvent.tryEmit(Unit)
+        }
     }
 
     fun recordPoiCompleted(location: String) {
@@ -94,6 +100,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     fun checkEndOfTour() {
         if (_currentLocation.value == "tosun_terzioglu_garden" && _completedPois.value.containsAll(requiredPois)) {
             _isEndOfTourReached.value = true
+            _tourFinishedEvent.tryEmit(Unit)
         }
     }
 
@@ -102,10 +109,29 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         _isEndOfTourReached.value = false
     }
 
+    fun resetAppState() {
+        if (_isPlaying.value) {
+            delayJob?.cancel()
+            ttsManager.stop()
+            _isPlaying.value = false
+        }
+        delayJob?.cancel()
+        ttsManager.stop()
+        guideFinished = false
+        _completedPois.value = emptySet()
+        _isEndOfTourReached.value = false
+        _currentArea.value = "None"
+        _isLargeImageMode.value = false
+        _isDetailed.value = true
+        loadScripts("guide")
+        _history.value = listOf(HistoryItem("Welcome to the Campus Tour! Press 'Start Tour' to begin."))
+    }
+
     fun debugCompleteAllPois() {
         _completedPois.value = requiredPois.toSet()
         if (_currentLocation.value == "tosun_terzioglu_garden") {
             _isEndOfTourReached.value = true
+            _tourFinishedEvent.tryEmit(Unit)
         }
     }
 
@@ -262,7 +288,6 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     fun finishTour() {
-        _stopAndUploadTrigger.tryEmit(Unit)
         delayJob?.cancel()
         ttsManager.stop()
         _isPlaying.value = false
@@ -272,6 +297,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         updatedHistory.add(HistoryItem(text = "Tour finished.", isUtterance = false))
         _history.value = updatedHistory
         recordPoiCompleted(_currentLocation.value)
+        _isEndOfTourReached.value = true
+        _tourFinishedEvent.tryEmit(Unit)
     }
 
     fun nextIndex() {

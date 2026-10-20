@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [data, setData] = useState<any[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(100);
+  const [surveyData, setSurveyData] = useState<any | null>(null);
 
   useEffect(() => {
     fetch('/api/latest')
@@ -22,8 +23,11 @@ export default function Dashboard() {
         return res.json();
       })
       .then(json => {
-        if (Array.isArray(json)) {
-          const processed = json.map(item => {
+        const rawItems = Array.isArray(json) 
+          ? json 
+          : (json?.experiment_data || json?.sensor_data || json?.data || []);
+        if (Array.isArray(rawItems) && rawItems.length > 0) {
+          const processed = rawItems.map((item: any) => {
             const d = new Date(item.timestamp);
             return {
               ...item,
@@ -34,6 +38,9 @@ export default function Dashboard() {
           setData(processed);
           setVisibleCount(100);
           setFileName('Latest uploaded from App');
+        }
+        if (json?.survey) {
+          setSurveyData(json.survey);
         }
       })
       .catch(err => console.log('No latest data available yet'));
@@ -55,9 +62,12 @@ export default function Dashboard() {
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        if (Array.isArray(json)) {
+        const rawItems = Array.isArray(json) 
+          ? json 
+          : (json?.experiment_data || json?.sensor_data || json?.data || []);
+        if (Array.isArray(rawItems)) {
           // Process timestamps for chart rendering
-          const processed = json.map(item => {
+          const processed = rawItems.map((item: any) => {
             const d = new Date(item.timestamp);
             return {
               ...item,
@@ -67,6 +77,11 @@ export default function Dashboard() {
           });
           setData(processed);
           setVisibleCount(100);
+        }
+        if (json?.survey) {
+          setSurveyData(json.survey);
+        } else {
+          setSurveyData(null);
         }
       } catch (err) {
         alert("Failed to parse JSON file");
@@ -133,6 +148,50 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid">
+          {surveyData && (
+            <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h2 className="card-title" style={{ margin: 0 }}>Post-Tour Retention & Workload Survey Results</h2>
+                <span className="badge badge-low" style={{ fontSize: '0.875rem' }}>
+                  {surveyData.metadata?.condition || 'Experiment'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div style={{ padding: '0.75rem', background: 'var(--muted-bg)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 600 }}>PARTICIPANT</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{surveyData.metadata?.participant_id || 'N/A'}</div>
+                </div>
+                <div style={{ padding: '0.75rem', background: 'var(--muted-bg)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 600 }}>OVERALL RETENTION</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981' }}>
+                    {surveyData.scores?.overall_retention_score ?? '-'} / 18
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                    Core: {surveyData.scores?.core_retention_score ?? '-'}/12 | Detailed: {surveyData.scores?.detailed_retention_score ?? '-'}/6
+                  </div>
+                </div>
+                <div style={{ padding: '0.75rem', background: 'var(--muted-bg)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 600 }}>NASA-TLX WORKLOAD</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#8b5cf6' }}>
+                    {surveyData.nasa_tlx?.mean_workload_score != null ? surveyData.nasa_tlx.mean_workload_score.toFixed(1) : '-'} / 100
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                    Mental: {surveyData.nasa_tlx?.mental_demand ?? '-'} | Temporal: {surveyData.nasa_tlx?.temporal_demand ?? '-'}
+                  </div>
+                </div>
+                <div style={{ padding: '0.75rem', background: 'var(--muted-bg)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 600 }}>ATTENTION CHECK</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: surveyData.scores?.attention_score === 2 ? '#10b981' : '#f59e0b' }}>
+                    {surveyData.scores?.attention_status || '-'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                    Omission: {surveyData.scores?.omission_rate_percent != null ? surveyData.scores.omission_rate_percent.toFixed(1) : '-'}%
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <h2 className="card-title">Physiological & Gait Data</h2>
             <div className="chart-container">

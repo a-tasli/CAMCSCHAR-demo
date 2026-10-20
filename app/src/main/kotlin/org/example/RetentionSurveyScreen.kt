@@ -1,5 +1,6 @@
 package org.example
 
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,11 +38,13 @@ import kotlin.math.roundToInt
 fun RetentionSurveyScreen(
     initialIsAutoMode: Boolean,
     serverUrl: String,
+    dataManager: ExperimentDataManager? = null,
+    onSurveySubmitted: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val surveyManager = remember { RetentionSurveyManager(context) }
+    val surveyManager = remember { RetentionSurveyManager(context, dataManager) }
 
     // Start timing (logged silently, NEVER displayed in UI)
     val surveyStartTime = remember { System.currentTimeMillis() }
@@ -70,8 +73,6 @@ fun RetentionSurveyScreen(
 
     // Submission states
     var isSubmitting by remember { mutableStateOf(false) }
-    var scoringResult by remember { mutableStateOf<SurveyScoringResult?>(null) }
-    var showResultsDialog by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
     fun recordQuestionAnswer(qId: Int, key: String) {
@@ -352,15 +353,24 @@ fun RetentionSurveyScreen(
                         )
 
                         coroutineScope.launch {
-                            surveyManager.saveSurveyResult(
+                            val uploadResult = surveyManager.saveAndUploadSurveyAndExperimentData(
                                 result = result,
                                 metadata = metadata,
                                 answers = quizAnswers,
                                 serverUrl = serverUrl
                             )
-                            scoringResult = result
                             isSubmitting = false
-                            showResultsDialog = true
+                            val message = if (uploadResult.uploadSuccess) {
+                                "Survey submitted and data uploaded successfully."
+                            } else {
+                                "Survey response and experiment data saved successfully."
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            if (onSurveySubmitted != null) {
+                                onSurveySubmitted()
+                            } else {
+                                onDismiss()
+                            }
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -379,70 +389,6 @@ fun RetentionSurveyScreen(
                 }
             }
         }
-    }
-
-    // Results / Confirmation Dialog (NOTE: NO TIME DISPLAY, adhering to requirements)
-    if (showResultsDialog && scoringResult != null) {
-        val r = scoringResult!!
-        AlertDialog(
-            onDismissRequest = { /* Force explicit close */ },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = "Success",
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Survey Submitted", fontWeight = FontWeight.Bold)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "The survey response and calculated metrics have been successfully saved to device storage and Downloads.",
-                        fontSize = 13.sp,
-                        color = Color.DarkGray
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Text("Participant: ${participantId.ifBlank { "P-01" }} (${selectedCondition.label})", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text("Attention Check: ${r.attentionStatus}", fontWeight = FontWeight.Bold, color = if (r.attentionScore == 2) Color(0xFF2E7D32) else Color(0xFFC62828), fontSize = 13.sp)
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Text("Retention Scores Summary:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("• Overall Retention: ${r.overallRetentionScore} / 18", fontSize = 13.sp)
-                    Text("• Core Retention: ${r.totalCoreScore} / 12 (Amphitheatre: ${r.amphCoreScore}/4, Lake: ${r.lakeCoreScore}/4, Garden: ${r.gardenCoreScore}/4)", fontSize = 12.sp)
-                    Text("• Detailed Retention: ${r.totalDetailedScore} / 6 (Amphitheatre: ${r.amphDetailedScore}/2, Lake: ${r.lakeDetailedScore}/2, Garden: ${r.gardenDetailedScore}/2)", fontSize = 12.sp)
-                    Text(String.format(Locale.US, "• Omission Rate (Opt E): %.1f%% (%d/18)", r.omissionRatePercent, r.omissionCount), fontSize = 12.sp)
-                    Text(String.format(Locale.US, "• Error Rate (Guesses): %.1f%% (%d/18)", r.errorRatePercent, r.errorCount), fontSize = 12.sp)
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Text(String.format(Locale.US, "Subjective Workload (NASA-TLX Mean): %.1f / 100", r.meanNasaTlxScore), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Mental: ${r.nasaTlxScores["mental_demand"]} | Physical: ${r.nasaTlxScores["physical_demand"]} | Temporal: ${r.nasaTlxScores["temporal_demand"]}", fontSize = 11.sp, color = Color.DarkGray)
-                    Text("Performance: ${r.nasaTlxScores["performance"]} | Effort: ${r.nasaTlxScores["effort"]} | Frustration: ${r.nasaTlxScores["frustration"]}", fontSize = 11.sp, color = Color.DarkGray)
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showResultsDialog = false
-                        onDismiss()
-                    }
-                ) {
-                    Text("Close Survey")
-                }
-            }
-        )
     }
 }
 
@@ -591,33 +537,6 @@ fun NasaTlxDimensionCard(
             ) {
                 Text(dimension.lowLabel, fontSize = 11.sp, color = Color.Gray)
                 Text(dimension.highLabel, fontSize = 11.sp, color = Color.Gray)
-            }
-
-            // Quick preset chips for rapid, clear marking
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                listOf(0 to "0", 25 to "25", 50 to "50", 75 to "75", 100 to "100").forEach { (scoreVal, label) ->
-                    val isSelected = currentScore == scoreVal
-                    Surface(
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color(0xFFF5F5F5),
-                        shape = RoundedCornerShape(6.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFE0E0E0)
-                        ),
-                        modifier = Modifier.clickable { onScoreChange(scoreVal) }
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 10.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color.DarkGray,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-                }
             }
         }
     }
