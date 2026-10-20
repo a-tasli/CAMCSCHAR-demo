@@ -9,10 +9,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -489,7 +492,7 @@ fun TourScreen(
     var latestImageIndex by remember { mutableStateOf(-1) }
     var scrollTrigger by remember { mutableStateOf(0) }
 
-    val showMap = currentArea == "None"
+    val showEnlargedMap = isAutoMode && (currentArea == "None")
 
     LaunchedEffect(history) {
         if (history.size <= 1) {
@@ -498,7 +501,7 @@ fun TourScreen(
         }
     }
 
-    LaunchedEffect(history, isLargeImageMode, showMap, scrollTrigger) {
+    LaunchedEffect(history, isLargeImageMode, showEnlargedMap, scrollTrigger) {
         if (history.isNotEmpty()) {
             // Give layout a bit more time to settle, especially for mode switches
             delay(150)
@@ -516,21 +519,21 @@ fun TourScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Phase 2: Out of Bounds layout (showMap) mimics Large Image Mode
-                // Phase 1: In-bounds layout follows isLargeImageMode
-                val showTopBox = showMap || isLargeImageMode
+                // Out of Bounds layout in Dynamic Mode (showEnlargedMap) or Large Image Mode
+                // In Static Mode, map does not enlarge when out of bounds and stays as minimap
+                val showTopBox = showEnlargedMap || isLargeImageMode
 
                 if (showTopBox) {
-                    // Top Box: Map if Out of Bounds, Image if In Bounds
+                    // Top Box: Map if Out of Bounds in Dynamic Mode, Image if In Bounds with Large Image Mode
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (showMap) Color.White else Color(0xFFE0E0E0)
+                            containerColor = if (showEnlargedMap) Color.White else Color(0xFFE0E0E0)
                         )
                     ) {
-                        if (showMap) {
+                        if (showEnlargedMap) {
                             OsmMapPreview(
                                 location = location, 
                                 isManualGpsMode = isManualGpsMode,
@@ -582,7 +585,7 @@ fun TourScreen(
 
                             if (item.isUtterance) {
                                 item {
-                                    val isExpanded = item.showImage ?: (showMap || !isLargeImageMode)
+                                    val isExpanded = item.showImage ?: (showEnlargedMap || !isLargeImageMode)
                                     AssetUtteranceImage(
                                         location = item.location,
                                         index = item.utteranceIndex,
@@ -619,8 +622,8 @@ fun TourScreen(
                 // Bottom sections (Map or Fallback) are now consolidated in the Top Box logic above
             }
 
-            // Minimap overlay when NOT in "None" area (not out of bounds)
-            if (!showMap) {
+            // Minimap overlay when map is not enlarged in top box
+            if (!showEnlargedMap) {
                 Card(
                     modifier = Modifier
                         .padding(24.dp)
@@ -707,7 +710,6 @@ fun TourScreen(
                 FilledIconButton(
                     onClick = { 
                         if (!isPlaying) {
-                            tourManager.setAutoMode(true)
                             tourManager.startTour()
                         } else {
                             tourManager.togglePlayPause() 
@@ -761,16 +763,11 @@ fun GaitApp(
     val leftEyeProb by blinkSensorManager.leftEyeProb.collectAsState()
     val rightEyeProb by blinkSensorManager.rightEyeProb.collectAsState()
 
-    val isPlaying by tourManager.isPlaying.collectAsState()
-    val isDetailed by tourManager.isDetailed.collectAsState()
     val isAutoMode by tourManager.isAutoMode.collectAsState()
-    val currentLocation by tourManager.currentLocation.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
     val completedPois by tourManager.completedPois.collectAsState()
-    
-    val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -789,76 +786,105 @@ fun GaitApp(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F7FA))
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Predefined Tour Modes Toggle (Dynamic vs Static)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Tour Controls", fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(
+                            text = "Tour Adaptation Mode",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = Color.Black
+                        )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Large Img Box", fontSize = 12.sp, color = Color.Black)
-                            Switch(
-                                checked = isLargeImageMode,
-                                onCheckedChange = { tourManager.toggleLargeImageMode() },
-                                modifier = Modifier.scale(0.8f)
+                            Text(
+                                text = if (isAutoMode) "Dynamic" else "Static",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isAutoMode) Color(0xFF00796B) else Color(0xFFE65100)
                             )
-                            Spacer(Modifier.width(4.dp))
-                            Text("Auto Mode", fontSize = 12.sp, color = Color.Black)
+                            Spacer(modifier = Modifier.width(6.dp))
                             Switch(
                                 checked = isAutoMode,
-                                onCheckedChange = { tourManager.toggleAutoMode() },
-                                modifier = Modifier.scale(0.8f)
+                                onCheckedChange = { tourManager.setAutoMode(it) }
                             )
-                        }
-                    }
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        Button(
-                            onClick = { tourManager.togglePlayPause() },
-                            enabled = !isAutoMode
-                        ) {
-                            Text(if (isPlaying) "Pause Tour" else "Play Tour")
-                        }
-                        
-                        Button(
-                            onClick = { tourManager.toggleScript() },
-                            enabled = !isAutoMode,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDetailed) Color(0xFF1976D2) else Color(0xFF388E3C),
-                                disabledContainerColor = Color.Gray
-                            )
-                        ) {
-                            Text(if (isDetailed) "Detailed Script" else "Simple Script")
                         }
                     }
 
-                    // Location selector
+                    // Interactive Segmented Buttons for Predefined Modes
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFB2EBF2))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        tourManager.availableLocations.forEach { loc ->
-                            val isSelected = currentLocation == loc
-                            Button(
-                                onClick = { tourManager.selectLocation(loc) },
-                                enabled = !isAutoMode,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSelected) Color(0xFF00796B) else Color.Gray,
-                                    disabledContainerColor = if (isSelected) Color(0x8800796B) else Color.LightGray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { tourManager.setAutoMode(true) },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isAutoMode) MaterialTheme.colorScheme.primary else Color.Transparent
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    text = loc.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } },
-                                    fontSize = 11.sp
+                                    text = "Dynamic Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (isAutoMode) Color.White else Color.DarkGray
+                                )
+                                Text(
+                                    text = "Adaptive content",
+                                    fontSize = 10.sp,
+                                    color = if (isAutoMode) Color.White.copy(alpha = 0.85f) else Color.Gray
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { tourManager.setAutoMode(false) },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (!isAutoMode) MaterialTheme.colorScheme.primary else Color.Transparent
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Static Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (!isAutoMode) Color.White else Color.DarkGray
+                                )
+                                Text(
+                                    text = "Fixed: low load setup",
+                                    fontSize = 10.sp,
+                                    color = if (!isAutoMode) Color.White.copy(alpha = 0.85f) else Color.Gray
                                 )
                             }
                         }
                     }
+
+                    Text(
+                        text = if (isAutoMode)
+                            "• Mode 1 (Dynamic): Dynamic content selection based on real-time cognitive load (adapts detail, image sizing, speech rate, and pause on overload)."
+                        else
+                            "• Mode 2 (Static): Fixed at low cognitive load (detailed script, fast 1.0x TTS, small images, no dynamic adaptation).",
+                        fontSize = 11.sp,
+                        color = Color(0xFF006064),
+                        lineHeight = 15.sp
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

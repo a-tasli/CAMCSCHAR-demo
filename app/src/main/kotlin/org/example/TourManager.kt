@@ -264,7 +264,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     fun toggleAutoMode() {
-        _isAutoMode.value = !_isAutoMode.value
+        setAutoMode(!_isAutoMode.value)
     }
 
     fun toggleLargeImageMode() {
@@ -273,6 +273,17 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     fun setAutoMode(enabled: Boolean) {
         _isAutoMode.value = enabled
+        if (!enabled) {
+            // Static mode: fixed at low cognitive load users (small images, fast tts, detailed script)
+            ttsManager.setDucking(false)
+            ttsManager.setSpeed(1.0f)
+            currentDelay = 0L
+            _isDetailed.value = true
+            _isLargeImageMode.value = false
+        } else {
+            // Dynamic mode: immediately apply current cognitive load adaptations
+            updateContext(currentLoadLevel, false)
+        }
     }
 
     fun startTour() {
@@ -328,10 +339,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     fun updateContext(level: String, isSpeaking: Boolean) {
         val previousLevel = currentLoadLevel
         currentLoadLevel = level
-        
-        ttsManager.setDucking(isSpeaking)
 
         if (_isAutoMode.value) {
+            ttsManager.setDucking(isSpeaking)
             when (level) {
                 "Low", "Waiting..." -> {
                     ttsManager.setSpeed(1.0f)
@@ -362,6 +372,14 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                     playCurrentIndexWithDelay()
                 }
             }
+        } else {
+            // Static mode: fixed at what we show to low cognitive load users (small images, fast tts, detailed script)
+            // Audio should not duck in static mode
+            ttsManager.setDucking(false)
+            ttsManager.setSpeed(1.0f)
+            currentDelay = 0L
+            _isDetailed.value = true
+            _isLargeImageMode.value = false
         }
     }
 
@@ -404,6 +422,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                     return
                 }
             }
+        } else {
+            // Static mode: always detailed script
+            _isDetailed.value = true
         }
 
         val script = if (_isDetailed.value) detailedScript else simplifiedScript
