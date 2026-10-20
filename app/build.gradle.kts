@@ -37,6 +37,9 @@ android {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
         }
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -58,6 +61,7 @@ dependencies {
     implementation(libs.androidx.material3)
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

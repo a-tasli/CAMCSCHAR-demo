@@ -50,11 +50,25 @@ class VoiceSensorManager {
         )
 
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+            try {
+                audioRecord?.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            audioRecord = null
             return
         }
 
         isRecording = true
-        audioRecord?.startRecording()
+        try {
+            audioRecord?.startRecording()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isRecording = false
+            audioRecord?.release()
+            audioRecord = null
+            return
+        }
 
         recordingThread = Thread {
             processAudio()
@@ -64,10 +78,24 @@ class VoiceSensorManager {
 
     fun stop() {
         isRecording = false
-        audioRecord?.stop()
-        audioRecord?.release()
+        try {
+            if (audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
+                audioRecord?.stop()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            audioRecord?.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         audioRecord = null
-        recordingThread?.join()
+        try {
+            recordingThread?.join(300)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         recordingThread = null
     }
 

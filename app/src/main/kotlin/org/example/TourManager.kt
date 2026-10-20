@@ -73,6 +73,42 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val _stopAndUploadTrigger = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val stopAndUploadTrigger = _stopAndUploadTrigger.asSharedFlow()
 
+    val requiredPois = listOf("amphitheatre", "lake_memorial", "tosun_terzioglu_garden")
+    private val _completedPois = MutableStateFlow<Set<String>>(emptySet())
+    val completedPois: StateFlow<Set<String>> = _completedPois.asStateFlow()
+
+    private val _isEndOfTourReached = MutableStateFlow(false)
+    val isEndOfTourReached: StateFlow<Boolean> = _isEndOfTourReached.asStateFlow()
+
+    fun setEndOfTourReached(reached: Boolean) {
+        _isEndOfTourReached.value = reached
+    }
+
+    fun recordPoiCompleted(location: String) {
+        if (location in requiredPois) {
+            _completedPois.value = _completedPois.value + location
+        }
+        checkEndOfTour()
+    }
+
+    fun checkEndOfTour() {
+        if (_currentLocation.value == "tosun_terzioglu_garden" && _completedPois.value.containsAll(requiredPois)) {
+            _isEndOfTourReached.value = true
+        }
+    }
+
+    fun resetCompletedPois() {
+        _completedPois.value = emptySet()
+        _isEndOfTourReached.value = false
+    }
+
+    fun debugCompleteAllPois() {
+        _completedPois.value = requiredPois.toSet()
+        if (_currentLocation.value == "tosun_terzioglu_garden") {
+            _isEndOfTourReached.value = true
+        }
+    }
+
     fun setManualGpsMode(enabled: Boolean, defaultLat: Double?, defaultLon: Double?) {
         _isManualGpsMode.value = enabled
         if (enabled && _manualLocationLat.value == null) {
@@ -149,6 +185,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                             val updatedHistory = _history.value.toMutableList()
                             updatedHistory.add(HistoryItem(text = "End of script reached. Waiting for next location...", isUtterance = false))
                             _history.value = updatedHistory
+                            recordPoiCompleted(_currentLocation.value)
                         }
                     }
                 }
@@ -176,7 +213,11 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         }
         loadScripts(location)
         _history.value = listOf(HistoryItem(text = "Selected ${location.replace('_', ' ')}. Press Play to start.", isUtterance = false))
+        if (location == "guide") {
+            _completedPois.value = emptySet()
         }
+        _isEndOfTourReached.value = false
+    }
 
     private fun parseScript(assetPath: String): List<ScriptLine> {
         val lines = mutableListOf<ScriptLine>()
@@ -230,6 +271,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         val updatedHistory = _history.value.toMutableList()
         updatedHistory.add(HistoryItem(text = "Tour finished.", isUtterance = false))
         _history.value = updatedHistory
+        recordPoiCompleted(_currentLocation.value)
     }
 
     fun nextIndex() {
@@ -240,6 +282,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             } else {
                 playCurrentIndex()
             }
+        } else {
+            recordPoiCompleted(_currentLocation.value)
         }
     }
 
@@ -361,6 +405,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             val updatedHistory = _history.value.toMutableList()
             updatedHistory.add(HistoryItem(text = "End of script reached. Waiting for next location...", isUtterance = false))
             _history.value = updatedHistory
+            recordPoiCompleted(_currentLocation.value)
         }
     }
     

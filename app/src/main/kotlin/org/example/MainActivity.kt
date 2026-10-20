@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -159,18 +160,26 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         if (!tourManager.isPlaying.value) {
-            sensorManager.stop()
-            voiceManager.stop()
-            locationSensorManager.stop()
+            try {
+                sensorManager.stop()
+                voiceManager.stop()
+                locationSensorManager.stop()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
     
     override fun onStop() {
         super.onStop()
         if (!tourManager.isPlaying.value) {
-            sensorManager.stop()
-            voiceManager.stop()
-            locationSensorManager.stop()
+            try {
+                sensorManager.stop()
+                voiceManager.stop()
+                locationSensorManager.stop()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
     
@@ -228,10 +237,28 @@ fun MainAppScreen(
     val isPlaying by tourManager.isPlaying.collectAsState()
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
-            TourService.startService(context)
+            val hasLocation = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (hasLocation) {
+                try {
+                    TourService.startService(context)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
             dataManager.startRecording()
         } else {
-            TourService.stopService(context)
+            try {
+                TourService.stopService(context)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -275,67 +302,79 @@ fun MainAppScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
-        TabRow(
-            selectedTabIndex = selectedTabIndex,
-            modifier = Modifier.height(72.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.primary
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTabIndex == index,
-                    onClick = { selectedTabIndex = index },
-                    text = { 
-                        Text(
-                            text = title,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        ) 
-                    }
+    var showSurvey by remember { mutableStateOf(false) }
+
+    if (showSurvey) {
+        RetentionSurveyScreen(
+            initialIsAutoMode = tourManager.isAutoMode.value,
+            serverUrl = serverUrl,
+            onDismiss = { showSurvey = false }
+        )
+    } else {
+        Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+            TabRow(
+                selectedTabIndex = selectedTabIndex,
+                modifier = Modifier.height(72.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = { 
+                            Text(
+                                text = title,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            ) 
+                        }
+                    )
+                }
+            }
+
+            when (selectedTabIndex) {
+                0 -> TourScreen(
+                    tourManager = tourManager, 
+                    location = location,
+                    isManualGpsMode = isManualGpsMode,
+                    manualLat = manualLat,
+                    manualLon = manualLon,
+                    onOpenSurvey = { showSurvey = true }
+                )
+                1 -> GaitApp(
+                    features = features,
+                    stepIntervals = stepIntervals,
+                    analyzer = analyzer, 
+                    bleManager = bleManager, 
+                    voiceManager = voiceManager, 
+                    locationSensorManager = locationSensorManager, 
+                    tourManager = tourManager, 
+                    blinkSensorManager = blinkSensorManager,
+                    isManualGpsMode = isManualGpsMode,
+                    manualLat = manualLat,
+                    manualLon = manualLon,
+                    location = location,
+                    serverUrl = serverUrl,
+                    onServerUrlChange = { 
+                        serverUrl = it 
+                        sharedPreferences.edit().putString("server_url", it).apply()
+                    },
+                    onUploadClicked = {
+                        coroutineScope.launch {
+                            val success = dataManager.uploadLatestFile(serverUrl)
+                            android.widget.Toast.makeText(context, if (success) "Upload successful" else "Upload failed", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onSaveToDownloadsClicked = {
+                        coroutineScope.launch {
+                            val success = dataManager.saveLatestToDownloads()
+                            android.widget.Toast.makeText(context, if (success) "Saved to Downloads" else "Save failed", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onOpenSurvey = { showSurvey = true }
                 )
             }
-        }
-
-        when (selectedTabIndex) {
-            0 -> TourScreen(
-                tourManager = tourManager, 
-                location = location,
-                isManualGpsMode = isManualGpsMode,
-                manualLat = manualLat,
-                manualLon = manualLon
-            )
-            1 -> GaitApp(
-                features = features,
-                stepIntervals = stepIntervals,
-                analyzer = analyzer, 
-                bleManager = bleManager, 
-                voiceManager = voiceManager, 
-                locationSensorManager = locationSensorManager, 
-                tourManager = tourManager, 
-                blinkSensorManager = blinkSensorManager,
-                isManualGpsMode = isManualGpsMode,
-                manualLat = manualLat,
-                manualLon = manualLon,
-                location = location,
-                serverUrl = serverUrl,
-                onServerUrlChange = { 
-                    serverUrl = it 
-                    sharedPreferences.edit().putString("server_url", it).apply()
-                },
-                onUploadClicked = {
-                    coroutineScope.launch {
-                        val success = dataManager.uploadLatestFile(serverUrl)
-                        android.widget.Toast.makeText(context, if (success) "Upload successful" else "Upload failed", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onSaveToDownloadsClicked = {
-                    coroutineScope.launch {
-                        val success = dataManager.saveLatestToDownloads()
-                        android.widget.Toast.makeText(context, if (success) "Saved to Downloads" else "Save failed", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-            )
         }
     }
 }
@@ -425,7 +464,8 @@ fun TourScreen(
     location: android.location.Location?,
     isManualGpsMode: Boolean = false,
     manualLat: Double? = null,
-    manualLon: Double? = null
+    manualLon: Double? = null,
+    onOpenSurvey: () -> Unit = {}
 ) {
     val history by tourManager.history.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
@@ -433,6 +473,7 @@ fun TourScreen(
     val isPlaying by tourManager.isPlaying.collectAsState()
     val isAutoMode by tourManager.isAutoMode.collectAsState()
     val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
+    val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var latestImage by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -593,6 +634,46 @@ fun TourScreen(
             }
         }
         
+        if (isEndOfTourReached) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                color = Color(0xFFE8F5E9),
+                shape = RoundedCornerShape(12.dp),
+                tonalElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "End of Tour Reached",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF1B5E20)
+                        )
+                        Text(
+                            text = "Take the post-tour retention & workload survey",
+                            fontSize = 12.sp,
+                            color = Color(0xFF2E7D32)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = onOpenSurvey,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("Take Survey")
+                    }
+                }
+            }
+        }
+
         // Control Bar
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -660,7 +741,8 @@ fun GaitApp(
     serverUrl: String = "",
     onServerUrlChange: (String) -> Unit = {},
     onUploadClicked: () -> Unit = {},
-    onSaveToDownloadsClicked: () -> Unit = {}
+    onSaveToDownloadsClicked: () -> Unit = {},
+    onOpenSurvey: () -> Unit = {}
 ) {
     val hrValue by bleManager.heartRate.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
@@ -676,6 +758,8 @@ fun GaitApp(
     val currentLocation by tourManager.currentLocation.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
+    val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
+    val completedPois by tourManager.completedPois.collectAsState()
     
     val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
 
@@ -813,6 +897,55 @@ fun GaitApp(
                         Button(onClick = onSaveToDownloadsClicked, modifier = Modifier.weight(1f)) {
                             Text("Save to Downloads")
                         }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        text = "POI Progress: ${completedPois.size}/3 completed ${if (completedPois.isEmpty()) "" else "(${completedPois.joinToString { it.replace('_', ' ') }})"}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (completedPois.size == 3) Color(0xFF1B5E20) else Color.DarkGray
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { tourManager.debugCompleteAllPois() },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Mark All 3 POIs Done", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { tourManager.resetCompletedPois() },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Reset POI Progress", fontSize = 11.sp)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Simulate End of Tour", fontSize = 14.sp, color = Color.Black)
+                        Switch(
+                            checked = isEndOfTourReached,
+                            onCheckedChange = { tourManager.setEndOfTourReached(it) }
+                        )
+                    }
+
+                    Button(
+                        onClick = onOpenSurvey,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
+                    ) {
+                        Text("Open Retention Survey (Debug View)")
                     }
                 }
             }

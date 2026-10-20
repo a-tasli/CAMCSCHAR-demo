@@ -60,7 +60,11 @@ class GaitAnalyzer {
 
     @Synchronized
     fun analyze(currentHr: Int?, isSpeaking: Boolean = false): GaitFeatures? {
-        val currentTimeNanos = android.os.SystemClock.elapsedRealtimeNanos()
+        val currentTimeNanos = try {
+            android.os.SystemClock.elapsedRealtimeNanos()
+        } catch (_: Throwable) {
+            System.nanoTime()
+        }
         val lastStepTimeNanos = stepTimestamps.lastOrNull() ?: 0L
         
         // If no steps yet, or last step was > 5s ago, we are not walking
