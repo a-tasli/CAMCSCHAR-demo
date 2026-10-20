@@ -28,6 +28,21 @@ class RetentionSurveyTest {
         val q18 = SurveyDefinitions.retentionQuestions.first { it.id == 18 }
         assertTrue(q18.isAttentionCheck)
         assertEquals("B", q18.correctKey)
+
+        // Verify equal distribution of correct answers (5 of each across 20 questions)
+        val keyCounts = SurveyDefinitions.retentionQuestions.groupingBy { it.correctKey }.eachCount()
+        assertEquals(5, keyCounts["A"])
+        assertEquals(5, keyCounts["B"])
+        assertEquals(5, keyCounts["C"])
+        assertEquals(5, keyCounts["D"])
+
+        // Verify trick question lengths are similar to normal questions
+        val normalLengths = SurveyDefinitions.retentionQuestions.filter { !it.isAttentionCheck }.map { it.question.length }
+        val avgNormalLength = normalLengths.average()
+        val trickLengths = SurveyDefinitions.retentionQuestions.filter { it.isAttentionCheck }.map { it.question.length }
+        trickLengths.forEach { trickLen ->
+            assertTrue(kotlin.math.abs(trickLen - avgNormalLength) < 30.0, "Trick question length ($trickLen) should be close to normal average ($avgNormalLength)")
+        }
     }
 
     @Test

@@ -122,12 +122,12 @@ object SurveyDefinitions {
             question = "Approximately how large is the total project area of the Amphitheatre?",
             options = listOf(
                 QuizOption("A", "3,200 square meters"),
-                QuizOption("B", "5,300 square meters"),
+                QuizOption("B", "4,100 square meters"),
                 QuizOption("C", "7,800 square meters"),
-                QuizOption("D", "10,500 square meters"),
+                QuizOption("D", "5,300 square meters"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "D",
             correctSummary = "5,300 square meters"
         ),
         RetentionQuestion(
@@ -183,16 +183,16 @@ object SurveyDefinitions {
             poi = "Amphitheatre",
             phase = "Phase 1: Low Cognitive Load",
             tier = "Detailed",
-            question = "Where is the Amphitheatre located within the campus master plan?",
+            question = "Which campus events are held at the Amphitheatre when it is not in use for major ceremonies?",
             options = listOf(
-                QuizOption("A", "On the eastern side of the campus, next to the Performing Arts Center (SGM) and University Center"),
-                QuizOption("B", "In the southwest corner, right next to the football stadium and sports center"),
-                QuizOption("C", "Directly facing the campus lake and boat dock"),
-                QuizOption("D", "In the central green quadrangle beside the Rectorate"),
+                QuizOption("A", "Outdoor archery competitions"),
+                QuizOption("B", "Roller hockey tournaments"),
+                QuizOption("C", "Road cycling time trials"),
+                QuizOption("D", "Campus skateboarding events"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "A",
-            correctSummary = "Eastern side of campus, next to SGM & University Center"
+            correctKey = "D",
+            correctSummary = "Campus skateboarding events held when not in use"
         ),
 
         // Part B: Point of Interest 2 – Lake Memorial (Phase 2: Medium Cognitive Load)
@@ -204,12 +204,12 @@ object SurveyDefinitions {
             question = "What was the site of the campus lake prior to the university's construction in 1997?",
             options = listOf(
                 QuizOption("A", "A natural marshland fed by mountain streams"),
-                QuizOption("B", "An empty and degraded industrial gravel pit"),
-                QuizOption("C", "An agricultural olive and hazelnut orchard"),
+                QuizOption("B", "An agricultural olive and hazelnut orchard"),
+                QuizOption("C", "An empty and degraded industrial gravel pit"),
                 QuizOption("D", "A disused municipal water reservoir"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "C",
             correctSummary = "Degraded industrial gravel pit prior to 1997"
         ),
         RetentionQuestion(
@@ -220,12 +220,12 @@ object SurveyDefinitions {
             question = "How is the artificial lake systematically filled and kept sustainable?",
             options = listOf(
                 QuizOption("A", "Deep groundwater artesian extraction wells"),
-                QuizOption("B", "Rainwater collected from building roofs and treated wastewater"),
-                QuizOption("C", "Direct municipal water pipeline connection from Istanbul"),
-                QuizOption("D", "Surface runoff diverted from neighboring residential ponds"),
+                QuizOption("B", "Direct municipal water pipeline connection from Istanbul"),
+                QuizOption("C", "Surface runoff diverted from neighboring residential ponds"),
+                QuizOption("D", "Rainwater collected from building roofs and treated wastewater"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "D",
             correctSummary = "Rainwater from building roofs & treated wastewater"
         ),
         RetentionQuestion(
@@ -235,13 +235,13 @@ object SurveyDefinitions {
             tier = "Core",
             question = "How did the lake's fish population first originate?",
             options = listOf(
-                QuizOption("A", "They were artificially stocked by the university's biology department"),
-                QuizOption("B", "Fish eggs were spontaneously transported into the basin by local seagulls"),
+                QuizOption("A", "Fish eggs were spontaneously transported into the basin by local seagulls"),
+                QuizOption("B", "They were artificially stocked by the university's biology department"),
                 QuizOption("C", "They migrated naturally via underground culvert pipelines"),
                 QuizOption("D", "They were introduced by student club aquarium conservation drives"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "A",
             correctSummary = "Seagulls transporting fish eggs into the basin"
         ),
         RetentionQuestion(
@@ -251,13 +251,13 @@ object SurveyDefinitions {
             tier = "Core",
             question = "What commemorative tradition takes place at the Graduation Memorial during commencement?",
             options = listOf(
-                QuizOption("A", "A commemorative Class Brick engraved with the graduation year is embedded into the memorial pathway"),
-                QuizOption("B", "Every individual student tosses a bronze commemorative medallion into the lake"),
+                QuizOption("A", "Every individual student tosses a bronze commemorative medallion into the lake"),
+                QuizOption("B", "A commemorative Class Brick engraved with the graduation year is embedded into the memorial pathway"),
                 QuizOption("C", "Each graduate's name is individually engraved onto a glass wall"),
                 QuizOption("D", "Graduating classes plant a commemorative cypress along the shoreline"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "A",
+            correctKey = "B",
             correctSummary = "Commemorative Class Brick embedded into memorial pathway"
         ),
         RetentionQuestion(
@@ -265,7 +265,7 @@ object SurveyDefinitions {
             poi = "Lake Memorial",
             phase = "Phase 2: Medium Cognitive Load",
             tier = "Attention Check (Trap 1)",
-            question = "Water quality in the artificial lake is regulated through several ecological mechanisms. Because it is important to verify that all statements are read attentively, please select water filtration pumps as your answer for this item, which assists researchers in recording which infrastructure elements were observed during the walking route.",
+            question = "To verify that you are reading questions attentively, please select water filtration pumps below.",
             options = listOf(
                 QuizOption("A", "Soil moisture variance"),
                 QuizOption("B", "Solar radiation levels"),
@@ -284,13 +284,13 @@ object SurveyDefinitions {
             tier = "Detailed",
             question = "What geological/engineering lining was applied to make the lake basin watertight?",
             options = listOf(
-                QuizOption("A", "Impermeable clay layered with gravel"),
-                QuizOption("B", "Poured reinforced waterproof concrete"),
+                QuizOption("A", "Poured reinforced waterproof concrete"),
+                QuizOption("B", "Impermeable clay layered with gravel"),
                 QuizOption("C", "Multi-layer polyethylene geomembrane sheets"),
                 QuizOption("D", "Sprayed bituminous asphalt emulsion"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "A",
+            correctKey = "B",
             correctSummary = "Impermeable clay layered with gravel"
         ),
         RetentionQuestion(
@@ -300,13 +300,13 @@ object SurveyDefinitions {
             tier = "Detailed",
             question = "Symbolically, what do the flowing lake water and the solid memorial bricks represent?",
             options = listOf(
-                QuizOption("A", "Water represents the fluid passage of time/new students, while bricks represent permanent individual achievement"),
-                QuizOption("B", "Water represents scientific inquiry, while bricks represent established cultural heritage"),
-                QuizOption("C", "Water represents academic freedom, while bricks represent institutional discipline"),
+                QuizOption("A", "Water represents scientific inquiry, while bricks represent established cultural heritage"),
+                QuizOption("B", "Water represents academic freedom, while bricks represent institutional discipline"),
+                QuizOption("C", "Water represents the fluid passage of time and new students, while bricks represent permanent individual achievement"),
                 QuizOption("D", "Water represents financial sustainability, while bricks represent infrastructure expansion"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "A",
+            correctKey = "C",
             correctSummary = "Water = passage of time/students; Bricks = permanent achievement"
         ),
 
@@ -319,12 +319,12 @@ object SurveyDefinitions {
             question = "Approximately how many individual plants does the Sabancı University campus host?",
             options = listOf(
                 QuizOption("A", "Around 25,000 plants"),
-                QuizOption("B", "Around 75,000 plants"),
-                QuizOption("C", "Over 170,000 plants"),
+                QuizOption("B", "Over 170,000 plants"),
+                QuizOption("C", "Around 75,000 plants"),
                 QuizOption("D", "Over 500,000 plants"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "C",
+            correctKey = "B",
             correctSummary = "Over 170,000 plants"
         ),
         RetentionQuestion(
@@ -335,12 +335,12 @@ object SurveyDefinitions {
             question = "Who is the botanical garden dedicated to, and what was his personal connection to nature?",
             options = listOf(
                 QuizOption("A", "Sakıp Sabancı, who financed the original botanical curation"),
-                QuizOption("B", "Founding rector Tosun Terzioğlu, who memorized the Latin names of campus trees"),
-                QuizOption("C", "Haluk Pamir, the campus landscape architect"),
-                QuizOption("D", "Toshitaka Hagiwara, a renowned Japanese master botanist"),
+                QuizOption("B", "Haluk Pamir, the campus landscape architect"),
+                QuizOption("C", "Toshitaka Hagiwara, a renowned Japanese master botanist"),
+                QuizOption("D", "Founding rector Tosun Terzioğlu, who memorized the Latin names of campus trees"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "D",
             correctSummary = "Founding rector Tosun Terzioğlu (memorized Latin tree names)"
         ),
         RetentionQuestion(
@@ -351,12 +351,12 @@ object SurveyDefinitions {
             question = "Which organization gifted the Japanese Sakura (Cherry Blossom) saplings between 2007 and 2009?",
             options = listOf(
                 QuizOption("A", "Toyota Corporation"),
-                QuizOption("B", "Komatsu"),
-                QuizOption("C", "Mitsubishi Heavy Industries"),
+                QuizOption("B", "Mitsubishi Heavy Industries"),
+                QuizOption("C", "Komatsu"),
                 QuizOption("D", "The Embassy of Japan Cultural Fund"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "C",
             correctSummary = "Komatsu (donated saplings 2007–2009)"
         ),
         RetentionQuestion(
@@ -366,13 +366,13 @@ object SurveyDefinitions {
             tier = "Core",
             question = "Approximately how many Sakura trees and distinct species are present across the campus?",
             options = listOf(
-                QuizOption("A", "Nearly 500 trees across 3 species"),
-                QuizOption("B", "Nearly 2,000 trees across 7 species"),
+                QuizOption("A", "Nearly 2,000 trees across 7 species"),
+                QuizOption("B", "Nearly 500 trees across 3 species"),
                 QuizOption("C", "Over 5,000 trees across 12 species"),
                 QuizOption("D", "Exactly 10,000 trees of a single species"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "A",
             correctSummary = "Nearly 2,000 trees across 7 species"
         ),
         RetentionQuestion(
@@ -380,7 +380,7 @@ object SurveyDefinitions {
             poi = "Tosun Terzioğlu Garden",
             phase = "Phases 3 & 4: High Cognitive Load / Overload",
             tier = "Attention Check (Trap 2)",
-            question = "The botanical curation around the garden includes various evergreen and deciduous plantings across the university grounds. To ensure that participants are reading each survey question in full, please select black sea rhododendrons as your response to this item before continuing to review the remaining historical and botanical landmarks along the path.",
+            question = "To demonstrate attention to survey questions, please select Black Sea rhododendrons below.",
             options = listOf(
                 QuizOption("A", "Mediterranean olive trees"),
                 QuizOption("B", "Black Sea rhododendrons"),
@@ -399,13 +399,13 @@ object SurveyDefinitions {
             tier = "Detailed",
             question = "Where was the 3.3-ton, 10,000-year-old Sakura Stone Monument sourced and imported from?",
             options = listOf(
-                QuizOption("A", "The Gujyo city area in central Japan"),
-                QuizOption("B", "The Mount Fuji volcanic foothills"),
+                QuizOption("A", "The Mount Fuji volcanic foothills"),
+                QuizOption("B", "The coastal riverbeds of Hokkaido"),
                 QuizOption("C", "The Yoshino mountain range in Nara"),
-                QuizOption("D", "The coastal riverbeds of Hokkaido"),
+                QuizOption("D", "The Gujyo city area in central Japan"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "A",
+            correctKey = "D",
             correctSummary = "Gujyo city area in central Japan"
         ),
         RetentionQuestion(
@@ -415,13 +415,13 @@ object SurveyDefinitions {
             tier = "Detailed",
             question = "Whose calligraphy was masterfully engraved onto the stone monument displaying the kanji for \"Sakura\"?",
             options = listOf(
-                QuizOption("A", "Akira Kurosawa"),
-                QuizOption("B", "Toshitaka Hagiwara"),
+                QuizOption("A", "Toshitaka Hagiwara"),
+                QuizOption("B", "Akira Kurosawa"),
                 QuizOption("C", "Kenzo Tange"),
                 QuizOption("D", "Tosun Terzioğlu"),
                 QuizOption("E", "I don't remember / Not sure")
             ),
-            correctKey = "B",
+            correctKey = "A",
             correctSummary = "Toshitaka Hagiwara calligraphy"
         )
     )
