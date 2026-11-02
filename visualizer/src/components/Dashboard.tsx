@@ -2,10 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ReferenceArea
-} from 'recharts';
+import SensorCharts from './SensorCharts';
 
 // Dynamically import Map to prevent SSR errors
 const Map = dynamic(() => import('./Map'), { ssr: false, loading: () => <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'#64748b'}}>Loading Map...</div> });
@@ -194,27 +191,7 @@ export default function Dashboard() {
 
           <div className="card">
             <h2 className="card-title">Physiological & Gait Data</h2>
-            <div className="chart-container">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="timeLabel" minTickGap={30} tick={{fontSize: 12, fill: '#64748b'}} />
-                  <YAxis yAxisId="left" tick={{fontSize: 12, fill: '#64748b'}} />
-                  <YAxis yAxisId="right" orientation="right" tick={{fontSize: 12, fill: '#64748b'}} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }} 
-                  />
-                  <Legend wrapperStyle={{ fontSize: '14px', paddingTop: '10px' }} />
-                  
-                  {/* Colored regions based on load level could be added here using ReferenceArea if we tracked segments */}
-                  
-                  <Line yAxisId="left" type="monotone" dataKey="hr" name="Heart Rate (BPM)" stroke="#ef4444" strokeWidth={2} dot={false} />
-                  <Line yAxisId="left" type="monotone" dataKey="hrv_rmssd" name="HRV (RMSSD)" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="step_variance" name="Step Variance" stroke="#10b981" strokeWidth={2} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="combined_load_index" name="Combined Load Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <SensorCharts data={data} />
           </div>
 
           <div className="grid grid-2">
