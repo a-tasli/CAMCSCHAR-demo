@@ -298,6 +298,8 @@ fun MainAppScreen(
                     poi = tourManager.currentArea.value,
                     loadLevel = features?.loadLevel ?: "Waiting...",
                     combinedLoadIndex = features?.combinedLoadIndex,
+                    physicalStrain = features?.physicalStrainScore ?: 0.0,
+                    mentalHr = features?.mentalHrBpm ?: 0.0,
                     isAutoMode = tourManager.isAutoMode.value,
                     isDetailed = tourManager.isDetailed.value,
                     isLargeImageMode = tourManager.isLargeImageMode.value,

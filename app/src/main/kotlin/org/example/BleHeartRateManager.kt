@@ -14,6 +14,7 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.UUID
+import kotlin.math.roundToInt
 
 @SuppressLint("MissingPermission")
 class BleHeartRateManager(private val context: Context) {
@@ -145,7 +146,9 @@ class BleHeartRateManager(private val context: Context) {
         
         while (offset + 1 < data.size) {
             val rr = characteristic.getIntValue(BluetoothGattCharacteristic.FORMAT_UINT16, offset) ?: break
-            rrIntervals.add(rr)
+            // Per the Heart Rate Measurement spec, RR intervals are transmitted in
+            // 1/1024 second units. Convert to milliseconds before use.
+            rrIntervals.add((rr * 1000.0 / 1024.0).roundToInt())
             offset += 2
         }
         return rrIntervals

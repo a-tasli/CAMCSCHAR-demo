@@ -23,7 +23,9 @@ type SensorVariable = {
 const VARIABLES: SensorVariable[] = [
   { key: 'hr', name: 'Heart Rate', unit: 'BPM', color: '#ef4444', decimals: 0, axis: 'left' },
   { key: 'hrv_rmssd', name: 'HRV (RMSSD)', unit: 'ms', color: '#3b82f6', decimals: 1, axis: 'left' },
+  { key: 'mental_hr_bpm', name: 'Mental HR (Residual)', unit: 'bpm', color: '#f97316', decimals: 1, axis: 'left' },
   { key: 'step_variance', name: 'Step Variance', unit: '', color: '#10b981', decimals: 3, axis: 'right' },
+  { key: 'physical_strain_score', name: 'Physical Strain (%HRR)', unit: '', color: '#0ea5e9', decimals: 0, axis: 'right' },
   { key: 'combined_load_index', name: 'Combined Load Index', unit: '', color: '#8b5cf6', decimals: 2, axis: 'right' },
 ];
 

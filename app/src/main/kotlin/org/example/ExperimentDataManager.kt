@@ -49,6 +49,8 @@ class ExperimentDataManager(private val context: Context) {
         poi: String,
         loadLevel: String,
         combinedLoadIndex: Double?,
+        physicalStrain: Double,
+        mentalHr: Double,
         isAutoMode: Boolean,
         isDetailed: Boolean,
         isLargeImageMode: Boolean,
@@ -76,6 +78,8 @@ class ExperimentDataManager(private val context: Context) {
                 put("poi", poi)
                 put("load_level", loadLevel)
                 put("combined_load_index", combinedLoadIndex ?: JSONObject.NULL)
+                put("physical_strain_score", physicalStrain)
+                put("mental_hr_bpm", mentalHr)
                 put("is_auto_mode", isAutoMode)
                 put("is_detailed_script", isDetailed)
                 put("is_large_image_mode", isLargeImageMode)
