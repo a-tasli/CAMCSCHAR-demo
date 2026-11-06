@@ -242,7 +242,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
         scope.launch {
             ttsManager.onUtteranceCompleted.collect { utteranceId ->
-                if (utteranceId == currentUtteranceId) {
+                if (currentUtteranceId != null && utteranceId == currentUtteranceId) {
                     if (isRecapUtterance) {
                         // A recap re-spoke the last completed line; continue from where the tour left off
                         isRecapUtterance = false
@@ -260,8 +260,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                         lastCheckpointRepeatedIndex = currentIndex
                         speakCurrentLineAsCheckpoint()
                     } else {
-                        currentIndex++
                         if (_isPlaying.value) {
+                            currentIndex++
                             if (currentIndex < maxIndex) {
                                 playCurrentIndexWithDelay()
                             } else {
@@ -426,26 +426,58 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         _tourFinishedEvent.tryEmit(Unit)
     }
 
+    private var lastNavClickTime = 0L
+    private val navLock = Any()
+
     fun nextIndex() {
-        if (currentIndex < maxIndex - 1) {
-            currentIndex++
-            if (_isPlaying.value) {
-                playCurrentIndexWithDelay()
+        synchronized(navLock) {
+            val now = System.currentTimeMillis()
+            if (now - lastNavClickTime < 200L) return
+            lastNavClickTime = now
+
+            delayJob?.cancel()
+            delayJob = null
+            auditoryModality.stop()
+            currentUtteranceId = null
+
+            if (currentIndex < maxIndex - 1) {
+                currentIndex++
+                if (_isPlaying.value) {
+                    playCurrentIndexWithDelay()
+                } else {
+                    playCurrentIndex()
+                }
             } else {
-                playCurrentIndex()
+                endOfScriptReached()
             }
-        } else {
-            recordPoiCompleted(_currentLocation.value)
         }
     }
 
     fun prevIndex() {
-        if (currentIndex > 0) {
-            currentIndex--
-            if (_isPlaying.value) {
-                playCurrentIndexWithDelay()
+        synchronized(navLock) {
+            val now = System.currentTimeMillis()
+            if (now - lastNavClickTime < 200L) return
+            lastNavClickTime = now
+
+            delayJob?.cancel()
+            delayJob = null
+            auditoryModality.stop()
+            currentUtteranceId = null
+
+            if (currentIndex > 0) {
+                currentIndex--
+                if (_isPlaying.value) {
+                    playCurrentIndexWithDelay()
+                } else {
+                    playCurrentIndex()
+                }
             } else {
-                playCurrentIndex()
+                // If already at the first line, restart line 0 so playback does not stall or stop
+                if (_isPlaying.value) {
+                    playCurrentIndexWithDelay()
+                } else {
+                    playCurrentIndex()
+                }
             }
         }
     }
@@ -524,6 +556,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     private fun playCurrentIndexWithDelay(extraLeadInMs: Long = 0L) {
         delayJob?.cancel()
+        currentUtteranceId = null
         delayJob = scope.launch {
             if (extraLeadInMs + currentDelay > 0) {
                 delay(extraLeadInMs + currentDelay)
@@ -533,16 +566,25 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     fun togglePlayPause() {
-        if (_isPlaying.value) {
-            _isPlaying.value = false
-            delayJob?.cancel()
-        } else {
-            _isPlaying.value = true
-            if (currentIndex < maxIndex) {
-                playCurrentIndexWithDelay()
+        synchronized(navLock) {
+            val now = System.currentTimeMillis()
+            if (now - lastNavClickTime < 200L) return
+            lastNavClickTime = now
+
+            if (_isPlaying.value) {
+                _isPlaying.value = false
+                delayJob?.cancel()
+                delayJob = null
+                auditoryModality.stop()
+                currentUtteranceId = null
             } else {
-                currentIndex = 0
-                playCurrentIndexWithDelay()
+                _isPlaying.value = true
+                if (currentIndex < maxIndex) {
+                    playCurrentIndexWithDelay()
+                } else {
+                    currentIndex = 0
+                    playCurrentIndexWithDelay()
+                }
             }
         }
     }
@@ -571,22 +613,20 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             val line = script[currentIndex]
             lastSpokenText = line.text
 
-            val updatedHistory = _history.value.toMutableList()
-            if (currentIndex == 0) {
-                updatedHistory.clear()
-            }
-            updatedHistory.add(
+            val nonUtterances = _history.value.filter { !it.isUtterance }
+            val utterances = script.take(currentIndex + 1).map {
                 HistoryItem(
-                    text = line.text,
+                    text = it.text,
                     isUtterance = true,
                     location = _currentLocation.value,
-                    utteranceIndex = line.index
+                    utteranceIndex = it.index
                 )
-            )
-            _history.value = updatedHistory
+            }
+            _history.value = nonUtterances + utterances
 
-            currentUtteranceId = UUID.randomUUID().toString()
-            auditoryModality.speak(line.text, currentUtteranceId!!)
+            val newId = UUID.randomUUID().toString()
+            currentUtteranceId = newId
+            auditoryModality.speak(line.text, newId)
         } else {
             // In case the scripts have different lengths
             endOfScriptReached()

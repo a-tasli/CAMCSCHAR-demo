@@ -140,9 +140,13 @@ fun TourScreen(
 
     LaunchedEffect(history, isLargeImageMode, showEnlargedMap, scrollTrigger) {
         if (history.isNotEmpty()) {
-            delay(150)
-            val totalItems = history.size + if (isMultimodal) history.count { it.isUtterance } else 0
-            listState.animateScrollToItem(totalItems - 1)
+            delay(100)
+            try {
+                val totalItems = history.size + if (isMultimodal) history.count { it.isUtterance } else 0
+                listState.animateScrollToItem((totalItems - 1).coerceAtLeast(0))
+            } catch (_: Exception) {
+                // Scroll animation cancelled by rapid navigation update
+            }
         }
     }
 
@@ -365,6 +369,15 @@ fun TourScreen(
         }
 
         // Control Bar
+        var lastClickTime by remember { mutableLongStateOf(0L) }
+        val debounced = { action: () -> Unit ->
+            val now = System.currentTimeMillis()
+            if (now - lastClickTime >= 200L) {
+                lastClickTime = now
+                action()
+            }
+        }
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -377,16 +390,18 @@ fun TourScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { tourManager.prevIndex() }) {
+                IconButton(onClick = { debounced { tourManager.prevIndex() } }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous")
                 }
 
                 FilledIconButton(
                     onClick = {
-                        if (!isPlaying) {
-                            tourManager.startTour()
-                        } else {
-                            tourManager.togglePlayPause()
+                        debounced {
+                            if (!isPlaying) {
+                                tourManager.startTour()
+                            } else {
+                                tourManager.togglePlayPause()
+                            }
                         }
                     },
                     modifier = Modifier.size(56.dp),
@@ -401,7 +416,7 @@ fun TourScreen(
                     )
                 }
 
-                IconButton(onClick = { tourManager.nextIndex() }) {
+                IconButton(onClick = { debounced { tourManager.nextIndex() } }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next")
                 }
             }
