@@ -2,14 +2,14 @@
 
 **Context-Aware Multimodal Content Selection (CAMCS)**
 
-CAMCSCHAR is an Android application designed to dynamically manage auditory and visual Augmented Reality (AR) content delivery based on real-time estimations of a user's **cognitive load (CL)**. 
+CAMCSCHAR is an Android application that delivers a **hands-free, location-aware cultural-heritage audio tour** and continuously adapts its narration — speech rate, inter-line pausing, information density, key-fact repetition, and ducking — to real-time estimates of the user's **cognitive load (CL)**.
 
-By analyzing inputs such as physiological data (heart rate, heart rate variability), visual factors (gait variance), and behavioral metrics (voice activity) using smartphone sensors and Bluetooth Low Energy (BLE) monitors, the app adjusts content delivery to maximize information retention and minimize subjective cognitive overload.
+By analyzing physiological data (heart rate), motor factors (gait variance), and behavioral metrics (voice activity), captured with smartphone sensors and a Bluetooth Low Energy (BLE) heart-rate monitor, the app adapts narration delivery to maximize information retention and minimize subjective cognitive overload.
 
 ## Key Features
-*   **Dynamic Content Adaptation:** Adjusts Text-to-Speech (TTS) parameters like speed, information density, pauses, and audio ducking based on real-time stress/load factors.
-*   **Visual Interface Adjustments:** Modifies visual clutter (e.g., swapping inline images for buttons or simplifying text) depending on the calculated cognitive load level (Low, Medium, High, Overload).
-*   **Location-Based Delivery:** Integrates GPS geofencing to trigger specific Cultural Heritage content as users approach Points of Interest (POIs).
+*   **Cognitive-Load-Adaptive Audio:** Adjusts TTS speech rate (1.0×–0.75×), inter-line pauses, script density (detailed vs. simplified), checkpoint repetition, and audio ducking based on the estimated load level (Low, Medium, High, Overload).
+*   **Audio-First by Design:** Eyes-free playback with media-notification controls; the phone stays in the pocket. A presentation-mode flag (`multimodal` / `audio_first` / `audio_only`) retains the legacy v1 visual UI (map, inline images, transcript) for backward comparison.
+*   **Location-Based Delivery:** Integrates GPS geofencing to trigger specific Cultural Heritage content as users approach Points of Interest (POIs), with an arrival earcon before each POI.
 
 ---
 

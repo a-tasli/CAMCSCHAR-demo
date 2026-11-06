@@ -99,6 +99,15 @@ class MainActivity : ComponentActivity() {
         tourManager = TourManager(this, ttsManager)
         blinkSensorManager = BlinkSensorManager(this)
         dataManager = ExperimentDataManager(this)
+
+        // Eyes-free playback control (§7.3): the media notification / MediaSession in
+        // TourService reaches the TourManager through this bridge.
+        TourControlBridge.playPause = {
+            if (tourManager.isPlaying.value) tourManager.togglePlayPause() else tourManager.startTour()
+        }
+        TourControlBridge.next = { tourManager.nextIndex() }
+        TourControlBridge.previous = { tourManager.prevIndex() }
+        TourControlBridge.isPlaying = { tourManager.isPlaying.value }
         
         checkAndRequestPermissions()
 
@@ -188,6 +197,7 @@ class MainActivity : ComponentActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        TourControlBridge.reset()
         bleManager.disconnect()
         ttsManager.shutdown()
         blinkSensorManager.stop()
@@ -232,6 +242,7 @@ fun MainAppScreen(
     val isManualGpsMode by tourManager.isManualGpsMode.collectAsState()
     val manualLat by tourManager.manualLocationLat.collectAsState()
     val manualLon by tourManager.manualLocationLon.collectAsState()
+    val isAutoMode by tourManager.isAutoMode.collectAsState()
 
     val effectiveLat = if (isManualGpsMode) manualLat else location?.latitude
     val effectiveLon = if (isManualGpsMode) manualLon else location?.longitude
@@ -303,7 +314,11 @@ fun MainAppScreen(
                     isAutoMode = tourManager.isAutoMode.value,
                     isDetailed = tourManager.isDetailed.value,
                     isLargeImageMode = tourManager.isLargeImageMode.value,
-                    scriptLine = tourManager.currentIndex + 1
+                    scriptLine = tourManager.currentIndex + 1,
+                    ttsSpeed = tourManager.audioParams.value.speed,
+                    interLineDelayMs = tourManager.audioParams.value.pauseMs,
+                    isCheckpointActive = tourManager.audioParams.value.checkpoint,
+                    presentationMode = tourManager.presentationMode.value.name.lowercase()
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -314,7 +329,7 @@ fun MainAppScreen(
 
     if (showSurvey) {
         RetentionSurveyScreen(
-            initialIsAutoMode = tourManager.isAutoMode.value,
+            initialIsAutoMode = isAutoMode,
             serverUrl = serverUrl,
             dataManager = dataManager,
             onSurveySubmitted = {
@@ -488,13 +503,23 @@ fun TourScreen(
     val isAutoMode by tourManager.isAutoMode.collectAsState()
     val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
     val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
+    val presentationMode by tourManager.presentationMode.collectAsState()
+    val loadLevel by tourManager.loadLevel.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var latestImage by remember { mutableStateOf<ImageBitmap?>(null) }
     var latestImageIndex by remember { mutableStateOf(-1) }
     var scrollTrigger by remember { mutableStateOf(0) }
 
-    val showEnlargedMap = isAutoMode && (currentArea == "None")
+    // §7.0: only MULTIMODAL shows the legacy visual layer (inline/large images).
+    val isMultimodal = presentationMode == PresentationMode.MULTIMODAL
+    // AUDIO_FIRST keeps the large map on top (navigation aid); AUDIO_ONLY shows no content UI.
+    val showLargeMap = presentationMode == PresentationMode.AUDIO_FIRST
+    // §7.0: the AUDIO_FIRST transcript is collapsible; AUDIO_ONLY has no content UI.
+    var transcriptExpanded by remember { mutableStateOf(true) }
+
+    // Legacy v1 rule: in MULTIMODAL dynamic mode the map enlarges only when out of any POI.
+    val showEnlargedMap = isAutoMode && (currentArea == "None") && isMultimodal
 
     LaunchedEffect(history) {
         if (history.size <= 1) {
@@ -507,7 +532,8 @@ fun TourScreen(
         if (history.isNotEmpty()) {
             // Give layout a bit more time to settle, especially for mode switches
             delay(150)
-            val totalItems = history.size + history.count { it.isUtterance }
+            // Image items only exist under MULTIMODAL (§7.0)
+            val totalItems = history.size + if (isMultimodal) history.count { it.isUtterance } else 0
             listState.animateScrollToItem(totalItems - 1)
         }
     }
@@ -521,21 +547,24 @@ fun TourScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Out of Bounds layout in Dynamic Mode (showEnlargedMap) or Large Image Mode
-                // In Static Mode, map does not enlarge when out of bounds and stays as minimap
-                val showTopBox = showEnlargedMap || isLargeImageMode
+                // Top Box — large map:
+                //   AUDIO_FIRST: always shown.
+                //   MULTIMODAL: enlarged map when out of bounds (dynamic mode), or the
+                //   large image in large-image mode (§7.6); minimap otherwise.
+                val showTopMap = showEnlargedMap || showLargeMap
+                val showTopBox = showTopMap || (isMultimodal && isLargeImageMode)
 
                 if (showTopBox) {
-                    // Top Box: Map if Out of Bounds in Dynamic Mode, Image if In Bounds with Large Image Mode
+                    // Top Box: map (or large image in MULTIMODAL large-image mode)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (showEnlargedMap) Color.White else Color(0xFFE0E0E0)
+                            containerColor = if (showTopMap) Color.White else Color(0xFFE0E0E0)
                         )
                     ) {
-                        if (showEnlargedMap) {
+                        if (showTopMap) {
                             OsmMapPreview(
                                 location = location, 
                                 isManualGpsMode = isManualGpsMode,
@@ -568,54 +597,105 @@ fun TourScreen(
                     }
                 }
 
-                // Text Box
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
-                ) {
-                    LazyColumn(
-                        state = listState,
+                // Content Box (§7.0):
+                //   AUDIO_ONLY  — compact status only (no in-tour content UI)
+                //   AUDIO_FIRST — collapsible researcher transcript, no images/map
+                //   MULTIMODAL  — legacy v1 transcript with inline images
+                if (presentationMode == PresentationMode.AUDIO_ONLY) {
+                    AudioTourStatusCard(
+                        isPlaying = isPlaying,
+                        currentArea = currentArea,
+                        loadLevel = loadLevel,
                         modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxSize()
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
                     ) {
-                        history.forEachIndexed { index, item ->
-                            val isLast = index == history.size - 1
-                            val textColor = if (isLast) Color.Black else Color.DarkGray
-
-                            if (item.isUtterance) {
-                                item {
-                                    val isExpanded = item.showImage ?: (showEnlargedMap || !isLargeImageMode)
-                                    AssetUtteranceImage(
-                                        location = item.location,
-                                        index = item.utteranceIndex,
-                                        isExpanded = isExpanded,
-                                        onToggle = { 
-                                            tourManager.toggleImageForUtterance(index, isExpanded)
-                                            scrollTrigger++
-                                        },
-                                        onImageLoaded = { bitmap ->
-                                            if (index >= latestImageIndex) {
-                                                latestImage = bitmap
-                                                latestImageIndex = index
-                                            }
-                                            scrollTrigger++
-                                        }
+                        if (presentationMode == PresentationMode.AUDIO_FIRST && !transcriptExpanded) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "Transcript hidden — audio tour active.\nControls: notification / headset buttons.",
+                                        color = Color.Gray,
+                                        fontSize = 14.sp,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextButton(onClick = { transcriptExpanded = true }) {
+                                        Text("Show Transcript", fontSize = 12.sp)
+                                    }
                                 }
                             }
+                        } else {
+                            if (presentationMode == PresentationMode.AUDIO_FIRST) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Researcher Transcript",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                    TextButton(onClick = { transcriptExpanded = false }) {
+                                        Text("Hide", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .fillMaxSize()
+                            ) {
+                                history.forEachIndexed { index, item ->
+                                    val isLast = index == history.size - 1
+                                    val textColor = if (isLast) Color.Black else Color.DarkGray
 
-                            item {
-                                Text(
-                                    text = item.text,
-                                    fontSize = 18.sp,
-                                    fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
-                                    color = textColor
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
+                                    if (item.isUtterance && isMultimodal) {
+                                        item {
+                                            val isExpanded = item.showImage ?: (showEnlargedMap || !isLargeImageMode)
+                                            AssetUtteranceImage(
+                                                location = item.location,
+                                                index = item.utteranceIndex,
+                                                isExpanded = isExpanded,
+                                                onToggle = {
+                                                    tourManager.toggleImageForUtterance(index, isExpanded)
+                                                    scrollTrigger++
+                                                },
+                                                onImageLoaded = { bitmap ->
+                                                    if (index >= latestImageIndex) {
+                                                        latestImage = bitmap
+                                                        latestImageIndex = index
+                                                    }
+                                                    scrollTrigger++
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                        }
+                                    }
+
+                                    item {
+                                        Text(
+                                            text = item.text,
+                                            fontSize = 18.sp,
+                                            fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
+                                            color = textColor
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -624,8 +704,8 @@ fun TourScreen(
                 // Bottom sections (Map or Fallback) are now consolidated in the Top Box logic above
             }
 
-            // Minimap overlay when map is not enlarged in top box
-            if (!showEnlargedMap) {
+            // Minimap overlay when map is not enlarged in top box (§7.0: multimodal only)
+            if (!showEnlargedMap && isMultimodal) {
                 Card(
                     modifier = Modifier
                         .padding(24.dp)
@@ -766,6 +846,7 @@ fun GaitApp(
     val rightEyeProb by blinkSensorManager.rightEyeProb.collectAsState()
 
     val isAutoMode by tourManager.isAutoMode.collectAsState()
+    val presentationMode by tourManager.presentationMode.collectAsState()
     val currentArea by tourManager.currentArea.collectAsState()
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
@@ -878,9 +959,59 @@ fun GaitApp(
 
                     Text(
                         text = if (isAutoMode)
-                            "• Mode 1 (Dynamic): Dynamic content selection based on real-time cognitive load (adapts detail, image sizing, speech rate, and pause on overload)."
+                            "• Dynamic (Auto Mode): the audio guide adapts speech rate, inter-line pauses, script density, key-fact repetition (checkpoints) and ducking to the real-time load level (pipeline-spec §7.1)."
                         else
-                            "• Mode 2 (Static): Fixed at low cognitive load (detailed script, fast 1.0x TTS, small images, no dynamic adaptation).",
+                            "• Static (Control): fixed Low-configuration delivery — detailed script, 1.0x TTS, no ducking, no adaptation (§7.5).",
+                        fontSize = 11.sp,
+                        color = Color(0xFF006064),
+                        lineHeight = 15.sp
+                    )
+
+                    Text(
+                        text = "Presentation Mode (audio-first pivot)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.Black
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFB2EBF2))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            PresentationMode.MULTIMODAL to "Multimodal",
+                            PresentationMode.AUDIO_FIRST to "Audio-First",
+                            PresentationMode.AUDIO_ONLY to "Audio-Only"
+                        ).forEach { (mode, label) ->
+                            val selected = presentationMode == mode
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { tourManager.setPresentationMode(mode) },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = if (selected) Color.White else Color.DarkGray
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "• Audio modes move all adaptation into the narration (rate, pauses, density, checkpoints, earcons); map/images/transcript are hidden or reduced accordingly (§7.0).",
                         fontSize = 11.sp,
                         color = Color(0xFF006064),
                         lineHeight = 15.sp
@@ -1442,5 +1573,50 @@ fun ParameterRow(label: String, value: String) {
     ) {
         Text(text = label, fontWeight = FontWeight.Medium)
         Text(text = value, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/**
+ * Minimal in-tour status surface for AUDIO_ONLY mode (§7.0: "no in-tour content UI").
+ * Shows only playback/POI/load state — content itself is audio-only.
+ */
+@Composable
+fun AudioTourStatusCard(
+    isPlaying: Boolean,
+    currentArea: String,
+    loadLevel: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = getLevelColor(loadLevel))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = if (isPlaying) "Audio tour playing" else "Audio tour paused",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "At: ${currentArea.replace('_', ' ')}  •  Load: $loadLevel",
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Eyes-free mode: playback continues with the screen off.\nUse the notification or headset buttons to control the tour.",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.75f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
     }
 }

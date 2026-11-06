@@ -54,14 +54,22 @@ class ExperimentDataManager(private val context: Context) {
         isAutoMode: Boolean,
         isDetailed: Boolean,
         isLargeImageMode: Boolean,
-        scriptLine: Int
+        scriptLine: Int,
+        // v2 audio-first pivot fields (pipeline-spec.md §8)
+        ttsSpeed: Float,
+        interLineDelayMs: Long,
+        isCheckpointActive: Boolean,
+        presentationMode: String
     ) = withContext(Dispatchers.IO) {
         if (!isRecording) return@withContext
 
         val currentTime = System.currentTimeMillis()
-        
+
         // Hash the state parameters to detect changes
-        val stateHash = Objects.hash(poi, loadLevel, combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode, isSpeaking, scriptLine)
+        val stateHash = Objects.hash(
+            poi, loadLevel, combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode,
+            isSpeaking, scriptLine, ttsSpeed, interLineDelayMs, isCheckpointActive, presentationMode
+        )
         
         val isStateChange = stateHash != lastRecordedStateHash
         val isPeriodic = currentTime - lastRecordTime >= 1000
@@ -84,6 +92,10 @@ class ExperimentDataManager(private val context: Context) {
                 put("is_detailed_script", isDetailed)
                 put("is_large_image_mode", isLargeImageMode)
                 put("script_line", scriptLine)
+                put("tts_speed", ttsSpeed)
+                put("inter_line_delay_ms", interLineDelayMs)
+                put("is_checkpoint_active", isCheckpointActive)
+                put("presentation_mode", presentationMode)
                 put("trigger", if (isStateChange) "event" else "periodic")
             }
             

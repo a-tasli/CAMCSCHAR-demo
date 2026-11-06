@@ -273,9 +273,11 @@ scripts are identical.
 
 | Mode | Presentation |
 |---|---|
-| `MULTIMODAL` | Legacy v1 UI: map, transcript, inline/large images (§7.6). Retained for backward comparison. |
-| `AUDIO_FIRST` | Eyes-free by default: media notification + collapsible transcript for the researcher; no images, no map. **Primary study condition.** |
+| `MULTIMODAL` | Legacy v1 UI: map (minimap/enlarged), transcript, inline/large images (§7.6). Retained for backward comparison. |
+| `AUDIO_FIRST` | Eyes-free by default: media notification + **large map** + collapsible researcher transcript; no inline images. **Launch default and primary study condition.** |
 | `AUDIO_ONLY` | No in-tour UI at all; playback is controlled only via the media notification and headset button; phone stays in the pocket. |
+
+The app **launches in `AUDIO_FIRST`**; the Debug tab switches modes.
 
 Because the visual channel disappears, all adaptation must live in the audio channel.
 The load level maps to an **`AudioTourParams`** object applied on every tick:

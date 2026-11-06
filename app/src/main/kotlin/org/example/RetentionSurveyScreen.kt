@@ -469,8 +469,11 @@ fun NasaTlxDimensionCard(
             )
 
             if (currentScore == null) {
-                // Interactive scale without any pre-selected thumb
-                BoxWithConstraints(
+                // Interactive scale without any pre-selected thumb.
+                // Note: plain Box (no BoxWithConstraints) — the content lambda does not
+                // need the incoming constraints; BoxWithConstraints would waste a
+                // subcomposition (lint: UnusedBoxWithConstraintsScope).
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(38.dp)
