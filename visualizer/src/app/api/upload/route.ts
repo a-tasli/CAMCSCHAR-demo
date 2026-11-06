@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       message: 'Data uploaded successfully',
       count: Array.isArray(data) ? data.length : 1 
     }, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Upload error:", error);
     return NextResponse.json({ error: 'Failed to process data' }, { status: 400 });
   }

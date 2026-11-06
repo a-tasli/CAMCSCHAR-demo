@@ -200,13 +200,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    data class POI(val id: Int, val name: String, val lat: Double, val lon: Double, val radiusMeters: Double)
+    typealias POI = org.example.POI
 
-    private val pois = listOf(
-        POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 80.0),
-        POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 60.0),
-        POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 80.0)
-    )
+    val pois: List<POI> by lazy { PoiRepository.loadPois(context) }
 
     fun checkLocation(lat: Double, lon: Double) {
         var foundPoi: String? = null

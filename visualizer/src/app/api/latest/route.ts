@@ -11,7 +11,7 @@ export async function GET() {
     } else {
       return NextResponse.json({ error: 'No data found' }, { status: 404 });
     }
-  } catch (error: any) {
+  } catch {
     return NextResponse.json({ error: 'Failed to read data' }, { status: 500 });
   }
 }

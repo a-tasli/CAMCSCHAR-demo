@@ -4,14 +4,92 @@ import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import SensorCharts from './SensorCharts';
 
+export interface ExperimentDataRecord {
+  timestamp: string;
+  timeLabel?: string;
+  timeMs?: number;
+  hr: number | null;
+  hrv_rmssd: number | null;
+  step_variance: number | null;
+  is_speaking: boolean;
+  lat: number | null;
+  lon: number | null;
+  poi: string;
+  load_level: string;
+  combined_load_index: number | null;
+  physical_strain_score?: number | null;
+  mental_hr_bpm?: number | null;
+  is_auto_mode?: boolean;
+  is_detailed_script?: boolean;
+  is_large_image_mode?: boolean;
+  script_line?: number;
+  tts_speed?: number;
+  inter_line_delay_ms?: number;
+  is_checkpoint_active?: boolean;
+  presentation_mode?: string;
+  trigger?: string;
+  [key: string]: unknown;
+}
+
+export interface SurveyData {
+  metadata?: {
+    participant_id?: string;
+    condition?: string;
+    date_time?: string;
+    phase_order?: string;
+  };
+  scores?: {
+    overall_retention_score?: number;
+    core_retention_score?: number;
+    detailed_retention_score?: number;
+    attention_score?: number;
+    attention_status?: string;
+    omission_rate_percent?: number;
+    error_rate_percent?: number;
+  };
+  nasa_tlx?: {
+    mean_workload_score?: number;
+    mental_demand?: number;
+    physical_demand?: number;
+    temporal_demand?: number;
+    performance?: number;
+    effort?: number;
+    frustration?: number;
+  };
+}
+
 // Dynamically import Map to prevent SSR errors
-const Map = dynamic(() => import('./Map'), { ssr: false, loading: () => <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'#64748b'}}>Loading Map...</div> });
+const Map = dynamic(() => import('./Map'), {
+  ssr: false,
+  loading: () => <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'#64748b'}}>Loading Map...</div>
+});
+
+function extractExperimentData(json: unknown): ExperimentDataRecord[] {
+  if (Array.isArray(json)) return json as ExperimentDataRecord[];
+  if (json && typeof json === 'object') {
+    const obj = json as Record<string, unknown>;
+    const raw = obj.experiment_data ?? obj.sensor_data ?? obj.data;
+    if (Array.isArray(raw)) return raw as ExperimentDataRecord[];
+  }
+  return [];
+}
+
+function processRecords(rawItems: ExperimentDataRecord[]): ExperimentDataRecord[] {
+  return rawItems.map((item) => {
+    const d = new Date(item.timestamp);
+    return {
+      ...item,
+      timeLabel: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timeMs: d.getTime()
+    };
+  });
+}
 
 export default function Dashboard() {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<ExperimentDataRecord[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(100);
-  const [surveyData, setSurveyData] = useState<any | null>(null);
+  const [surveyData, setSurveyData] = useState<SurveyData | null>(null);
 
   useEffect(() => {
     fetch('/api/latest')
@@ -20,27 +98,19 @@ export default function Dashboard() {
         return res.json();
       })
       .then(json => {
-        const rawItems = Array.isArray(json) 
-          ? json 
-          : (json?.experiment_data || json?.sensor_data || json?.data || []);
-        if (Array.isArray(rawItems) && rawItems.length > 0) {
-          const processed = rawItems.map((item: any) => {
-            const d = new Date(item.timestamp);
-            return {
-              ...item,
-              timeLabel: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              timeMs: d.getTime()
-            };
-          });
-          setData(processed);
+        const rawItems = extractExperimentData(json);
+        if (rawItems.length > 0) {
+          setData(processRecords(rawItems));
           setVisibleCount(100);
           setFileName('Latest uploaded from App');
         }
-        if (json?.survey) {
-          setSurveyData(json.survey);
+        if (json && typeof json === 'object' && 'survey' in json) {
+          setSurveyData((json as { survey: SurveyData }).survey);
         }
       })
-      .catch(err => console.log('No latest data available yet'));
+      .catch(() => {
+        // No latest data available yet
+      });
   }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -59,24 +129,13 @@ export default function Dashboard() {
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        const rawItems = Array.isArray(json) 
-          ? json 
-          : (json?.experiment_data || json?.sensor_data || json?.data || []);
-        if (Array.isArray(rawItems)) {
-          // Process timestamps for chart rendering
-          const processed = rawItems.map((item: any) => {
-            const d = new Date(item.timestamp);
-            return {
-              ...item,
-              timeLabel: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              timeMs: d.getTime()
-            };
-          });
-          setData(processed);
+        const rawItems = extractExperimentData(json);
+        if (rawItems.length > 0) {
+          setData(processRecords(rawItems));
           setVisibleCount(100);
         }
-        if (json?.survey) {
-          setSurveyData(json.survey);
+        if (json && typeof json === 'object' && 'survey' in json) {
+          setSurveyData((json as { survey: SurveyData }).survey);
         } else {
           setSurveyData(null);
         }
@@ -100,11 +159,10 @@ export default function Dashboard() {
 
   const events = useMemo(() => {
     return data.filter(d => d.trigger === 'event').map((e, idx) => {
-      let title = "State Changed";
-      let desc = [];
-      let isSpeakEvent = e.is_speaking;
-      let isPoi = e.poi !== 'None';
-      
+      const isSpeakEvent = Boolean(e.is_speaking);
+      const isPoi = e.poi !== 'None';
+      const desc: string[] = [];
+
       if (isSpeakEvent) desc.push("User spoke");
       if (e.is_auto_mode) desc.push(`Auto Mode`);
       if (e.combined_load_index != null) {
@@ -116,7 +174,7 @@ export default function Dashboard() {
 
       return {
         id: idx,
-        time: e.timeLabel,
+        time: e.timeLabel ?? '',
         title: isPoi ? `POI: ${e.poi.replace(/_/g, ' ')}` : 'Update',
         desc: desc.join(' | '),
         type: isSpeakEvent ? 'event-speak' : (isPoi ? 'event-poi' : '')
@@ -130,6 +188,11 @@ export default function Dashboard() {
         <div>
           <h1>CAMCSCHAR Data Visualizer</h1>
           <p>Academic dashboard for analyzing multimodal cognitive load experiments</p>
+          {fileName && (
+            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+              Source: <strong>{fileName}</strong>
+            </p>
+          )}
         </div>
         <div>
           <label className="btn btn-primary">
@@ -239,14 +302,14 @@ export default function Dashboard() {
                 {data.slice(0, visibleCount).map((d, i) => (
                   <tr key={i}>
                     <td>{d.timeLabel}</td>
-                    <td>{d.hr || '-'}</td>
-                    <td>{d.hrv_rmssd ? d.hrv_rmssd.toFixed(2) : '-'}</td>
-                    <td>{d.step_variance ? d.step_variance.toFixed(2) : '-'}</td>
+                    <td>{d.hr ?? '-'}</td>
+                    <td>{d.hrv_rmssd != null ? d.hrv_rmssd.toFixed(2) : '-'}</td>
+                    <td>{d.step_variance != null ? d.step_variance.toFixed(2) : '-'}</td>
                     <td><span className={`badge ${getBadgeClass(d.load_level)}`}>{d.load_level}</span></td>
-                    <td>{d.combined_load_index ? d.combined_load_index.toFixed(2) : '-'}</td>
-                    <td>{d.script_line || '-'}</td>
+                    <td>{d.combined_load_index != null ? d.combined_load_index.toFixed(2) : '-'}</td>
+                    <td>{d.script_line ?? '-'}</td>
                     <td>{d.poi.replace(/_/g, ' ')}</td>
-                    <td>{d.trigger}</td>
+                    <td>{d.trigger ?? 'periodic'}</td>
                   </tr>
                 ))}
               </tbody>

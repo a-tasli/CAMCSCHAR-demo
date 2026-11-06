@@ -1,66 +1,27 @@
 package org.example
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
-import java.util.*
-
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-
-import org.osmdroid.config.Configuration
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polygon
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.foundation.Image
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
-import android.graphics.BitmapFactory
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.ui.draw.scale
-import androidx.compose.material.icons.filled.Pause
+import org.osmdroid.config.Configuration
 
 class MainActivity : ComponentActivity() {
 
@@ -71,7 +32,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var locationSensorManager: LocationSensorManager
     private lateinit var ttsManager: TTSManager
     private lateinit var tourManager: TourManager
-    private lateinit var blinkSensorManager: BlinkSensorManager
     private lateinit var dataManager: ExperimentDataManager
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -81,51 +41,54 @@ class MainActivity : ComponentActivity() {
         if (granted) {
             bleManager.startScan()
             locationSensorManager.start()
-            blinkSensorManager.start(this)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
+
+        volumeControlStream = AudioManager.STREAM_MUSIC
         Configuration.getInstance().userAgentValue = packageName
-        
+
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
         voiceManager = VoiceSensorManager()
         locationSensorManager = LocationSensorManager(this)
         ttsManager = TTSManager(this)
         tourManager = TourManager(this, ttsManager)
-        blinkSensorManager = BlinkSensorManager(this)
         dataManager = ExperimentDataManager(this)
 
-        // Eyes-free playback control (§7.3): the media notification / MediaSession in
-        // TourService reaches the TourManager through this bridge.
+        // Eyes-free playback control (§7.3): media notification / MediaSession in TourService
         TourControlBridge.playPause = {
             if (tourManager.isPlaying.value) tourManager.togglePlayPause() else tourManager.startTour()
         }
         TourControlBridge.next = { tourManager.nextIndex() }
         TourControlBridge.previous = { tourManager.prevIndex() }
         TourControlBridge.isPlaying = { tourManager.isPlaying.value }
-        
+
         checkAndRequestPermissions()
 
         setContent {
             MaterialTheme {
                 Surface(color = Color.White) {
-                    MainAppScreen(analyzer, bleManager, voiceManager, locationSensorManager, tourManager, blinkSensorManager, dataManager)
+                    MainAppScreen(
+                        analyzer = analyzer,
+                        bleManager = bleManager,
+                        voiceManager = voiceManager,
+                        locationSensorManager = locationSensorManager,
+                        tourManager = tourManager,
+                        dataManager = dataManager
+                    )
                 }
             }
         }
-        }
+    }
 
     private fun checkAndRequestPermissions() {
         val permissionsList = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.CAMERA
+            Manifest.permission.RECORD_AUDIO
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -154,7 +117,6 @@ class MainActivity : ComponentActivity() {
         } else {
             bleManager.startScan()
             locationSensorManager.start()
-            blinkSensorManager.start(this)
         }
     }
 
@@ -181,7 +143,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    
+
     override fun onStop() {
         super.onStop()
         if (!tourManager.isPlaying.value) {
@@ -194,37 +156,36 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
         TourControlBridge.reset()
         bleManager.disconnect()
         ttsManager.shutdown()
-        blinkSensorManager.stop()
     }
 }
 
 @Composable
 fun MainAppScreen(
-    analyzer: GaitAnalyzer, 
-    bleManager: BleHeartRateManager, 
-    voiceManager: VoiceSensorManager, 
+    analyzer: GaitAnalyzer,
+    bleManager: BleHeartRateManager,
+    voiceManager: VoiceSensorManager,
     locationSensorManager: LocationSensorManager,
     tourManager: TourManager,
-    blinkSensorManager: BlinkSensorManager,
     dataManager: ExperimentDataManager
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Tour", "Debug")
     val location by locationSensorManager.location.collectAsState()
-    
+
     val context = androidx.compose.ui.platform.LocalContext.current
-    val sharedPreferences = context.getSharedPreferences("CAMCSCHAR_PREFS", android.content.Context.MODE_PRIVATE)
-    var serverUrl by remember { mutableStateOf(sharedPreferences.getString("server_url", "http://192.168.1.5:3000") ?: "http://192.168.1.5:3000") }
+    val sharedPreferences = context.getSharedPreferences("CAMCSCHAR_PREFS", Context.MODE_PRIVATE)
+    var serverUrl by remember {
+        mutableStateOf(sharedPreferences.getString("server_url", "http://192.168.1.5:3000") ?: "http://192.168.1.5:3000")
+    }
     val coroutineScope = rememberCoroutineScope()
-    val currentServerUrl by rememberUpdatedState(serverUrl)
     var showSurvey by remember { mutableStateOf(false) }
-    
+
     LaunchedEffect(Unit) {
         tourManager.tourFinishedEvent.collect {
             if (dataManager.isRecording) {
@@ -238,7 +199,7 @@ fun MainAppScreen(
             showSurvey = true
         }
     }
-    
+
     val isManualGpsMode by tourManager.isManualGpsMode.collectAsState()
     val manualLat by tourManager.manualLocationLat.collectAsState()
     val manualLon by tourManager.manualLocationLon.collectAsState()
@@ -252,7 +213,7 @@ fun MainAppScreen(
             tourManager.checkLocation(effectiveLat, effectiveLon)
         }
     }
-    
+
     val isPlaying by tourManager.isPlaying.collectAsState()
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
@@ -281,10 +242,7 @@ fun MainAppScreen(
         }
     }
 
-    val hrValue by bleManager.heartRate.collectAsState()
     val rrIntervals by bleManager.rrIntervals.collectAsState()
-    val isSpeaking by voiceManager.isSpeaking.collectAsState()
-    
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
 
@@ -292,25 +250,32 @@ fun MainAppScreen(
         analyzer.addRRIntervals(rrIntervals)
     }
 
-    LaunchedEffect(isSpeaking) {
+    // Steady 1 Hz ticker loop: reading latest state without restarting on speech toggle
+    LaunchedEffect(Unit) {
         while (true) {
             try {
-                features = analyzer.analyze(hrValue, isSpeaking)
+                val currentHr = bleManager.heartRate.value
+                val speaking = voiceManager.isSpeaking.value
+                val curLat = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLat.value else locationSensorManager.location.value?.latitude
+                val curLon = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLon.value else locationSensorManager.location.value?.longitude
+
+                val computedFeatures = analyzer.analyze(currentHr, speaking)
+                features = computedFeatures
                 stepIntervals = analyzer.getStepIntervals()
-                tourManager.updateContext(features?.loadLevel ?: "Waiting...", isSpeaking)
-                
+                tourManager.updateContext(computedFeatures?.loadLevel ?: "Waiting...", speaking)
+
                 dataManager.recordData(
-                    hr = hrValue,
-                    hrv = features?.rmssd ?: 0.0,
-                    stepVariance = features?.stepTimeVariability ?: 0.0,
-                    isSpeaking = isSpeaking,
-                    lat = effectiveLat,
-                    lon = effectiveLon,
+                    hr = currentHr,
+                    hrv = computedFeatures?.rmssd ?: 0.0,
+                    stepVariance = computedFeatures?.stepTimeVariability ?: 0.0,
+                    isSpeaking = speaking,
+                    lat = curLat,
+                    lon = curLon,
                     poi = tourManager.currentArea.value,
-                    loadLevel = features?.loadLevel ?: "Waiting...",
-                    combinedLoadIndex = features?.combinedLoadIndex,
-                    physicalStrain = features?.physicalStrainScore ?: 0.0,
-                    mentalHr = features?.mentalHrBpm ?: 0.0,
+                    loadLevel = computedFeatures?.loadLevel ?: "Waiting...",
+                    combinedLoadIndex = computedFeatures?.combinedLoadIndex,
+                    physicalStrain = computedFeatures?.physicalStrainScore ?: 0.0,
+                    mentalHr = computedFeatures?.mentalHrBpm ?: 0.0,
                     isAutoMode = tourManager.isAutoMode.value,
                     isDetailed = tourManager.isDetailed.value,
                     isLargeImageMode = tourManager.isLargeImageMode.value,
@@ -323,7 +288,7 @@ fun MainAppScreen(
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            delay(1000) // Update every second
+            delay(1000)
         }
     }
 
@@ -351,12 +316,12 @@ fun MainAppScreen(
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index },
-                        text = { 
+                        text = {
                             Text(
                                 text = title,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
-                            ) 
+                            )
                         }
                     )
                 }
@@ -364,7 +329,7 @@ fun MainAppScreen(
 
             when (selectedTabIndex) {
                 0 -> TourScreen(
-                    tourManager = tourManager, 
+                    tourManager = tourManager,
                     location = location,
                     isManualGpsMode = isManualGpsMode,
                     manualLat = manualLat,
@@ -374,1249 +339,35 @@ fun MainAppScreen(
                 1 -> GaitApp(
                     features = features,
                     stepIntervals = stepIntervals,
-                    analyzer = analyzer, 
-                    bleManager = bleManager, 
-                    voiceManager = voiceManager, 
-                    locationSensorManager = locationSensorManager, 
-                    tourManager = tourManager, 
-                    blinkSensorManager = blinkSensorManager,
+                    analyzer = analyzer,
+                    bleManager = bleManager,
+                    voiceManager = voiceManager,
+                    locationSensorManager = locationSensorManager,
+                    tourManager = tourManager,
                     isManualGpsMode = isManualGpsMode,
                     manualLat = manualLat,
                     manualLon = manualLon,
                     location = location,
                     serverUrl = serverUrl,
-                    onServerUrlChange = { 
-                        serverUrl = it 
+                    onServerUrlChange = {
+                        serverUrl = it
                         sharedPreferences.edit().putString("server_url", it).apply()
                     },
                     onUploadClicked = {
                         coroutineScope.launch {
                             val success = dataManager.uploadLatestFile(serverUrl)
-                            android.widget.Toast.makeText(context, if (success) "Upload successful" else "Upload failed", android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, if (success) "Upload successful" else "Upload failed", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onSaveToDownloadsClicked = {
                         coroutineScope.launch {
                             val success = dataManager.saveLatestToDownloads()
-                            android.widget.Toast.makeText(context, if (success) "Saved to Downloads" else "Save failed", android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, if (success) "Saved to Downloads" else "Save failed", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onOpenSurvey = { showSurvey = true }
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun AssetUtteranceImage(
-    location: String?,
-    index: Int?,
-    isExpanded: Boolean,
-    onToggle: () -> Unit,
-    onImageLoaded: ((ImageBitmap) -> Unit)? = null
-) {
-    if (location == null || index == null) return
-
-    val context = LocalContext.current
-    var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var attemptedLoad by remember { mutableStateOf(false) }
-
-    LaunchedEffect(location, index) {
-        withContext(Dispatchers.IO) {
-            try {
-                val assetManager = context.assets
-                val folderPath = "images/$location"
-                val files = assetManager.list(folderPath) ?: emptyArray()
-                
-                // Find a file where the trailing number matches the index exactly
-                val file = files.find { 
-                    val nameWithoutExt = it.substringBeforeLast(".")
-                    val trailingNumber = nameWithoutExt.takeLastWhile { char -> char.isDigit() }.toIntOrNull()
-                    trailingNumber == index
-                }
-                
-                if (file != null) {
-                    val inputStream = assetManager.open("$folderPath/$file")
-                    val bitmap = BitmapFactory.decodeStream(inputStream)
-                    val img = bitmap.asImageBitmap()
-                    inputStream.close()
-                    withContext(Dispatchers.Main) {
-                        imageBitmap = img
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            attemptedLoad = true
-        }
-    }
-
-    LaunchedEffect(imageBitmap) {
-        if (imageBitmap != null) {
-            onImageLoaded?.invoke(imageBitmap!!)
-        }
-    }
-
-    if (imageBitmap != null) {
-        if (isExpanded) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFD6D6D6)),
-                onClick = onToggle
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(), 
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        bitmap = imageBitmap!!,
-                        contentDescription = "Utterance Image",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            }
-        } else {
-            TextButton(onClick = onToggle) {
-                Text("Show Image", fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun TourScreen(
-    tourManager: TourManager, 
-    location: android.location.Location?,
-    isManualGpsMode: Boolean = false,
-    manualLat: Double? = null,
-    manualLon: Double? = null,
-    onOpenSurvey: () -> Unit = {}
-) {
-    val history by tourManager.history.collectAsState()
-    val currentArea by tourManager.currentArea.collectAsState()
-    val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
-    val isPlaying by tourManager.isPlaying.collectAsState()
-    val isAutoMode by tourManager.isAutoMode.collectAsState()
-    val isLargeImageMode by tourManager.isLargeImageMode.collectAsState()
-    val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
-    val presentationMode by tourManager.presentationMode.collectAsState()
-    val loadLevel by tourManager.loadLevel.collectAsState()
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
-    var latestImage by remember { mutableStateOf<ImageBitmap?>(null) }
-    var latestImageIndex by remember { mutableStateOf(-1) }
-    var scrollTrigger by remember { mutableStateOf(0) }
-
-    // §7.0: only MULTIMODAL shows the legacy visual layer (inline/large images).
-    val isMultimodal = presentationMode == PresentationMode.MULTIMODAL
-    // AUDIO_FIRST keeps the large map on top (navigation aid); AUDIO_ONLY shows no content UI.
-    val showLargeMap = presentationMode == PresentationMode.AUDIO_FIRST
-    // §7.0: the AUDIO_FIRST transcript is collapsible; AUDIO_ONLY has no content UI.
-    var transcriptExpanded by remember { mutableStateOf(true) }
-
-    // Legacy v1 rule: in MULTIMODAL dynamic mode the map enlarges only when out of any POI.
-    val showEnlargedMap = isAutoMode && (currentArea == "None") && isMultimodal
-
-    LaunchedEffect(history) {
-        if (history.size <= 1) {
-            latestImage = null
-            latestImageIndex = -1
-        }
-    }
-
-    LaunchedEffect(history, isLargeImageMode, showEnlargedMap, scrollTrigger) {
-        if (history.isNotEmpty()) {
-            // Give layout a bit more time to settle, especially for mode switches
-            delay(150)
-            // Image items only exist under MULTIMODAL (§7.0)
-            val totalItems = history.size + if (isMultimodal) history.count { it.isUtterance } else 0
-            listState.animateScrollToItem(totalItems - 1)
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Top Box — large map:
-                //   AUDIO_FIRST: always shown.
-                //   MULTIMODAL: enlarged map when out of bounds (dynamic mode), or the
-                //   large image in large-image mode (§7.6); minimap otherwise.
-                val showTopMap = showEnlargedMap || showLargeMap
-                val showTopBox = showTopMap || (isMultimodal && isLargeImageMode)
-
-                if (showTopBox) {
-                    // Top Box: map (or large image in MULTIMODAL large-image mode)
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (showTopMap) Color.White else Color(0xFFE0E0E0)
-                        )
-                    ) {
-                        if (showTopMap) {
-                            OsmMapPreview(
-                                location = location, 
-                                isManualGpsMode = isManualGpsMode,
-                                manualLat = manualLat,
-                                manualLon = manualLon,
-                                resetTrigger = resetTrigger,
-                                onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                if (latestImage != null) {
-                                    Image(
-                                        bitmap = latestImage!!,
-                                        contentDescription = "Latest Utterance Image",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Text(
-                                        text = "Large Image Placeholder\nWaiting for image...",
-                                        color = Color.Gray,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 20.sp,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Content Box (§7.0):
-                //   AUDIO_ONLY  — compact status only (no in-tour content UI)
-                //   AUDIO_FIRST — collapsible researcher transcript, no images/map
-                //   MULTIMODAL  — legacy v1 transcript with inline images
-                if (presentationMode == PresentationMode.AUDIO_ONLY) {
-                    AudioTourStatusCard(
-                        isPlaying = isPlaying,
-                        currentArea = currentArea,
-                        loadLevel = loadLevel,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
-                } else {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        if (presentationMode == PresentationMode.AUDIO_FIRST && !transcriptExpanded) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "Transcript hidden — audio tour active.\nControls: notification / headset buttons.",
-                                        color = Color.Gray,
-                                        fontSize = 14.sp,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                    TextButton(onClick = { transcriptExpanded = true }) {
-                                        Text("Show Transcript", fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                        } else {
-                            if (presentationMode == PresentationMode.AUDIO_FIRST) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Researcher Transcript",
-                                        fontSize = 12.sp,
-                                        color = Color.Gray
-                                    )
-                                    TextButton(onClick = { transcriptExpanded = false }) {
-                                        Text("Hide", fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .padding(16.dp)
-                                    .fillMaxSize()
-                            ) {
-                                history.forEachIndexed { index, item ->
-                                    val isLast = index == history.size - 1
-                                    val textColor = if (isLast) Color.Black else Color.DarkGray
-
-                                    if (item.isUtterance && isMultimodal) {
-                                        item {
-                                            val isExpanded = item.showImage ?: (showEnlargedMap || !isLargeImageMode)
-                                            AssetUtteranceImage(
-                                                location = item.location,
-                                                index = item.utteranceIndex,
-                                                isExpanded = isExpanded,
-                                                onToggle = {
-                                                    tourManager.toggleImageForUtterance(index, isExpanded)
-                                                    scrollTrigger++
-                                                },
-                                                onImageLoaded = { bitmap ->
-                                                    if (index >= latestImageIndex) {
-                                                        latestImage = bitmap
-                                                        latestImageIndex = index
-                                                    }
-                                                    scrollTrigger++
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                        }
-                                    }
-
-                                    item {
-                                        Text(
-                                            text = item.text,
-                                            fontSize = 18.sp,
-                                            fontWeight = if (isLast) FontWeight.Medium else FontWeight.Normal,
-                                            color = textColor
-                                        )
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Bottom sections (Map or Fallback) are now consolidated in the Top Box logic above
-            }
-
-            // Minimap overlay when map is not enlarged in top box (§7.0: multimodal only)
-            if (!showEnlargedMap && isMultimodal) {
-                Card(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .size(120.dp)
-                        .align(Alignment.TopEnd),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    OsmMapPreview(
-                        location = location,
-                        isManualGpsMode = isManualGpsMode,
-                        manualLat = manualLat,
-                        manualLon = manualLon,
-                        resetTrigger = resetTrigger,
-                        onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) },
-                        modifier = Modifier.fillMaxSize(),
-                        isMinimap = true
-                    )
-                }
-            }
-        }
-        
-        if (isEndOfTourReached) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                color = Color(0xFFE8F5E9),
-                shape = RoundedCornerShape(12.dp),
-                tonalElevation = 2.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "End of Tour Reached",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color(0xFF1B5E20)
-                        )
-                        Text(
-                            text = "Take the post-tour retention & workload survey",
-                            fontSize = 12.sp,
-                            color = Color(0xFF2E7D32)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = onOpenSurvey,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                    ) {
-                        Text("Take Survey")
-                    }
-                }
-            }
-        }
-
-        // Control Bar
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 4.dp
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp, horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // IconButton(onClick = { tourManager.finishTour() }) {
-                //     Icon(Icons.Default.Done, contentDescription = "Finish Tour")
-                // }
-
-                IconButton(onClick = { tourManager.prevIndex() }) {
-                    Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Previous")
-                }
-
-                FilledIconButton(
-                    onClick = { 
-                        if (!isPlaying) {
-                            tourManager.startTour()
-                        } else {
-                            tourManager.togglePlayPause() 
-                        }
-                    },
-                    modifier = Modifier.size(56.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (isPlaying) Color(0xFFE91E63) else Color(0xFF4CAF50)
-                    )
-                ) {
-                    Icon(
-                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Stop" else "Start",
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                IconButton(onClick = { tourManager.nextIndex() }) {
-                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Next")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun GaitApp(
-    features: GaitFeatures?,
-    stepIntervals: List<Float>,
-    analyzer: GaitAnalyzer, 
-    bleManager: BleHeartRateManager, 
-    voiceManager: VoiceSensorManager, 
-    locationSensorManager: LocationSensorManager, 
-    tourManager: TourManager, 
-    blinkSensorManager: BlinkSensorManager,
-    isManualGpsMode: Boolean = false,
-    manualLat: Double? = null,
-    manualLon: Double? = null,
-    location: android.location.Location? = null,
-    serverUrl: String = "",
-    onServerUrlChange: (String) -> Unit = {},
-    onUploadClicked: () -> Unit = {},
-    onSaveToDownloadsClicked: () -> Unit = {},
-    onOpenSurvey: () -> Unit = {}
-) {
-    val hrValue by bleManager.heartRate.collectAsState()
-    val bleState by bleManager.connectionState.collectAsState()
-    val isSpeaking by voiceManager.isSpeaking.collectAsState()
-    val isCooldown by voiceManager.isCooldown.collectAsState()
-    val blinksLast30s by blinkSensorManager.blinksLast30s.collectAsState()
-    val leftEyeProb by blinkSensorManager.leftEyeProb.collectAsState()
-    val rightEyeProb by blinkSensorManager.rightEyeProb.collectAsState()
-
-    val isAutoMode by tourManager.isAutoMode.collectAsState()
-    val presentationMode by tourManager.presentationMode.collectAsState()
-    val currentArea by tourManager.currentArea.collectAsState()
-    val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
-    val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
-    val completedPois by tourManager.completedPois.collectAsState()
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Tour Controls
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F7FA))
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Predefined Tour Modes Toggle (Dynamic vs Static)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Tour Adaptation Mode",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color.Black
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (isAutoMode) "Dynamic" else "Static",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isAutoMode) Color(0xFF00796B) else Color(0xFFE65100)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Switch(
-                                checked = isAutoMode,
-                                onCheckedChange = { tourManager.setAutoMode(it) }
-                            )
-                        }
-                    }
-
-                    // Interactive Segmented Buttons for Predefined Modes
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFB2EBF2))
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { tourManager.setAutoMode(true) },
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isAutoMode) MaterialTheme.colorScheme.primary else Color.Transparent
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "Dynamic Mode",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (isAutoMode) Color.White else Color.DarkGray
-                                )
-                                Text(
-                                    text = "Adaptive content",
-                                    fontSize = 10.sp,
-                                    color = if (isAutoMode) Color.White.copy(alpha = 0.85f) else Color.Gray
-                                )
-                            }
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { tourManager.setAutoMode(false) },
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (!isAutoMode) MaterialTheme.colorScheme.primary else Color.Transparent
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "Static Mode",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (!isAutoMode) Color.White else Color.DarkGray
-                                )
-                                Text(
-                                    text = "Fixed: low load setup",
-                                    fontSize = 10.sp,
-                                    color = if (!isAutoMode) Color.White.copy(alpha = 0.85f) else Color.Gray
-                                )
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = if (isAutoMode)
-                            "• Dynamic (Auto Mode): the audio guide adapts speech rate, inter-line pauses, script density, and key-fact repetition (checkpoints) to the real-time load level (pipeline-spec §7.1)."
-                        else
-                            "• Static (Control): fixed Low-configuration delivery — detailed script, 1.0x TTS, no adaptation (§7.5).",
-                        fontSize = 11.sp,
-                        color = Color(0xFF006064),
-                        lineHeight = 15.sp
-                    )
-
-                    Text(
-                        text = "Presentation Mode (audio-first pivot)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = Color.Black
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFB2EBF2))
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        listOf(
-                            PresentationMode.MULTIMODAL to "Multimodal",
-                            PresentationMode.AUDIO_FIRST to "Audio-First",
-                            PresentationMode.AUDIO_ONLY to "Audio-Only"
-                        ).forEach { (mode, label) ->
-                            val selected = presentationMode == mode
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { tourManager.setPresentationMode(mode) },
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = if (selected) Color.White else Color.DarkGray
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = "• Audio modes move all adaptation into the narration (rate, pauses, density, checkpoints, earcons); map/images/transcript are hidden or reduced accordingly (§7.0).",
-                        fontSize = 11.sp,
-                        color = Color(0xFF006064),
-                        lineHeight = 15.sp
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Manual GPS Mode", fontSize = 14.sp, color = Color.Black)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isManualGpsMode) {
-                                Button(
-                                    onClick = { tourManager.resetManualLocation(location?.latitude, location?.longitude) },
-                                    modifier = Modifier.padding(end = 8.dp)
-                                ) {
-                                    Text("Reset")
-                                }
-                            }
-                            Switch(
-                                checked = isManualGpsMode,
-                                onCheckedChange = { tourManager.setManualGpsMode(it, location?.latitude, location?.longitude) }
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "Current POI Area: ${if (currentArea == "None") "None" else currentArea.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.DarkGray,
-                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
-                    )
-
-                    androidx.compose.material3.OutlinedTextField(
-                        value = serverUrl,
-                        onValueChange = onServerUrlChange,
-                        label = { Text("Visualizer Server URL") },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(onClick = onUploadClicked, modifier = Modifier.weight(1f)) {
-                            Text("Upload Last")
-                        }
-                        Button(onClick = onSaveToDownloadsClicked, modifier = Modifier.weight(1f)) {
-                            Text("Save to Downloads")
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Text(
-                        text = "POI Progress: ${completedPois.size}/3 completed ${if (completedPois.isEmpty()) "" else "(${completedPois.joinToString { it.replace('_', ' ') }})"}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (completedPois.size == 3) Color(0xFF1B5E20) else Color.DarkGray
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { tourManager.debugCompleteAllPois() },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            Text("Mark All 3 POIs Done", fontSize = 11.sp)
-                        }
-                        OutlinedButton(
-                            onClick = { tourManager.resetCompletedPois() },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            Text("Reset POI Progress", fontSize = 11.sp)
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Simulate End of Tour", fontSize = 14.sp, color = Color.Black)
-                        Switch(
-                            checked = isEndOfTourReached,
-                            onCheckedChange = { tourManager.setEndOfTourReached(it) }
-                        )
-                    }
-
-                    Button(
-                        onClick = { tourManager.finishTour() },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-                    ) {
-                        Text("End Tour (Finish & Trigger Survey)")
-                    }
-
-                    Button(
-                        onClick = onOpenSurvey,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
-                    ) {
-                        Text("Open Retention Survey (Debug View)")
-                    }
-                }
-            }
-
-            Text(
-                text = "Gait & Heart Rate Monitor",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Cognitive Load Estimations",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.align(Alignment.Start)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SmallLoadCard(
-                    label = "Gait", 
-                    load = features?.gaitLoadIndex ?: 0.0, 
-                    modifier = Modifier.weight(1f),
-                    subtitle = if (features?.isWalking == false) "not walking" else null
-                )
-                SmallLoadCard("Heart", features?.hrLoadIndex ?: 0.0, Modifier.weight(1f))
-            }
-
-            CognitiveLoadCard("Combined Load", features?.combinedLoadIndex, features?.loadLevel ?: "Waiting...")
-
-            // Voice Activity Indicator
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "Mic:", fontSize = 14.sp, color = Color.Gray)
-                Spacer(modifier = Modifier.width(8.dp))
-                Canvas(modifier = Modifier.size(12.dp)) {
-                    drawCircle(color = if (isSpeaking) Color.Green else Color.Gray)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = when {
-                        isCooldown -> "Waiting 3s... (+1 Level)"
-                        isSpeaking -> "Speech Detected (+1 Level)"
-                        else -> "Quiet"
-                    }, 
-                    fontSize = 14.sp, 
-                    color = if (isSpeaking) Color.DarkGray else Color.Gray
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            HeartRateCard(hrValue, bleState, features?.sdnn ?: 0.0)
-
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            StepIntervalGraph(stepIntervals)
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Inner Workings (Gait Parameters)",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.align(Alignment.Start)
-            )
-
-            ParameterRow("Step Time", String.format(Locale.US, "%.0f ms", features?.stepTime ?: 0.0))
-            ParameterRow("Step Variability", String.format(Locale.US, "%.1f ms", features?.stepTimeVariability ?: 0.0))
-            ParameterRow("Location", location?.let { String.format(Locale.US, "%.5f, %.5f", it.latitude, it.longitude) } ?: "Waiting for GPS...")
-            ParameterRow("Left Eye Open Prob", leftEyeProb?.let { String.format(Locale.US, "%.2f", it) } ?: "--")
-            ParameterRow("Right Eye Open Prob", rightEyeProb?.let { String.format(Locale.US, "%.2f", it) } ?: "--")
-            ParameterRow("Blinks (Last 30s)", "$blinksLast30s")
-            ParameterRow("Blink Rate (/sec)", String.format(Locale.US, "%.2f", blinksLast30s / 30.0f))
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            OsmMapPreview(
-                location = location,
-                isManualGpsMode = isManualGpsMode,
-                manualLat = manualLat,
-                manualLon = manualLon,
-                resetTrigger = resetTrigger,
-                onManualLocationChange = { lat, lon -> tourManager.updateManualLocation(lat, lon) }
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Text(
-                text = "Demo Build",
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
-        }
-    }
-}
-
-@Composable
-fun OsmMapPreview(
-    location: android.location.Location?,
-    isManualGpsMode: Boolean = false,
-    manualLat: Double? = null,
-    manualLon: Double? = null,
-    resetTrigger: Int = 0,
-    onManualLocationChange: ((Double, Double) -> Unit)? = null,
-    modifier: Modifier = Modifier.fillMaxWidth().height(250.dp),
-    isMinimap: Boolean = false
-) {
-    var isDragging by remember { mutableStateOf(false) }
-    var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
-
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color.White)
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { context ->
-                    var lastResetTrigger = resetTrigger
-                    MapView(context).apply {
-                        tag = lastResetTrigger 
-
-                        setOnTouchListener { v, event ->
-                            when (event.action) {
-                                android.view.MotionEvent.ACTION_DOWN -> v.parent.requestDisallowInterceptTouchEvent(true)
-                                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> v.parent.requestDisallowInterceptTouchEvent(false)
-                            }
-                            false
-                        }
-                        setMultiTouchControls(true)
-                        setBuiltInZoomControls(!isMinimap)
-                        controller.setZoom(16.0)
-                        
-                        val pois = listOf(
-                            TourManager.POI(1, "amphitheatre", 40.89320979780269, 29.379169091952324, 80.0),
-                            TourManager.POI(2, "lake_memorial", 40.892876775980646, 29.375505980922984, 60.0),
-                            TourManager.POI(3, "tosun_terzioglu_garden", 40.890581851850961, 29.377186219901855, 80.0)
-                        )
-                        
-                        for (poi in pois) {
-                            val center = GeoPoint(poi.lat, poi.lon)
-                            val marker = Marker(this)
-                            marker.position = center
-                            marker.title = poi.name
-                            overlays.add(marker)
-                            
-                            val circle = Polygon(this)
-                            val pts = Polygon.pointsAsCircle(center, poi.radiusMeters)
-                            circle.points = pts
-                            circle.fillColor = 0x220000FF
-                            circle.strokeColor = 0x880000FF.toInt()
-                            circle.strokeWidth = 2.0f
-                            overlays.add(circle)
-                        }
-                        
-                        val centerPt = if (isManualGpsMode && manualLat != null && manualLon != null) {
-                            GeoPoint(manualLat, manualLon)
-                        } else if (location != null) {
-                            GeoPoint(location.latitude, location.longitude)
-                        } else {
-                            GeoPoint(40.892, 29.377)
-                        }
-                        controller.setCenter(centerPt)
-                        mapViewInstance = this
-                    }
-                },
-                update = { mapView ->
-                    var manualMarker = mapView.overlays.find { it is Marker && it.title == "Manual" } as? Marker
-                    var userMarker = mapView.overlays.find { it is Marker && it.title == "User" } as? Marker
-
-                    val lastResetTrigger = mapView.tag as? Int ?: 0
-                    val forceUpdate = resetTrigger != lastResetTrigger
-                    if (forceUpdate) {
-                        mapView.tag = resetTrigger
-                    }
-
-                    if (isManualGpsMode && manualLat != null && manualLon != null) {
-                        if (userMarker != null) {
-                            mapView.overlays.remove(userMarker)
-                        }
-                        if (manualMarker == null) {
-                            manualMarker = Marker(mapView)
-                            manualMarker.title = "Manual"
-                            manualMarker.isDraggable = true
-                            manualMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_edit)
-                            manualMarker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                                override fun onMarkerDragStart(marker: Marker) {
-                                    isDragging = true
-                                }
-                                override fun onMarkerDrag(marker: Marker) {}
-                                override fun onMarkerDragEnd(marker: Marker) {
-                                    isDragging = false
-                                    onManualLocationChange?.invoke(marker.position.latitude, marker.position.longitude)
-                                }
-                            })
-                            mapView.overlays.add(manualMarker)
-                            manualMarker.position = GeoPoint(manualLat, manualLon)
-                            mapView.invalidate()
-                        }
-                        
-                        if (forceUpdate && !isDragging) {
-                            manualMarker.position = GeoPoint(manualLat, manualLon)
-                            mapView.invalidate()
-                        }
-
-                    } else if (!isManualGpsMode && location != null) {
-                        if (manualMarker != null) {
-                            mapView.overlays.remove(manualMarker)
-                        }
-                        
-                        val userPt = GeoPoint(location.latitude, location.longitude)
-                        if (userMarker == null) {
-                            userMarker = Marker(mapView)
-                            userMarker.title = "User"
-                            userMarker.icon = ContextCompat.getDrawable(mapView.context, android.R.drawable.ic_menu_mylocation)
-                            mapView.overlays.add(userMarker)
-                        }
-                        userMarker.position = userPt
-                        mapView.invalidate()
-                    } else {
-                        if (manualMarker != null) mapView.overlays.remove(manualMarker)
-                        if (userMarker != null) mapView.overlays.remove(userMarker)
-                        mapView.invalidate()
-                    }
-                }
-            )
-
-            if (isMinimap) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Surface(
-                        onClick = { mapViewInstance?.controller?.zoomIn() },
-                        modifier = Modifier.size(28.dp),
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = Color.White.copy(alpha = 0.8f),
-                        tonalElevation = 2.dp
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Add, contentDescription = "Zoom In", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                    Surface(
-                        onClick = { mapViewInstance?.controller?.zoomOut() },
-                        modifier = Modifier.size(28.dp),
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = Color.White.copy(alpha = 0.8f),
-                        tonalElevation = 2.dp
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Remove, contentDescription = "Zoom Out", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun StepIntervalGraph(intervals: List<Float>) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(150.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
-    ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Text("Step Intervals (ms)", fontSize = 12.sp, color = Color.Gray)
-            Spacer(modifier = Modifier.height(4.dp))
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                if (intervals.isEmpty()) return@Canvas
-
-                val width = size.width
-                val height = size.height
-
-                val maxVal = maxOf(intervals.maxOrNull() ?: 1000f, 800f)
-                val minVal = minOf(intervals.minOrNull() ?: 300f, 400f)
-                val range = maxVal - minVal + 100f // Padding
-                
-                val points = intervals.mapIndexed { index, value ->
-                    val x = if (intervals.size > 1) index.toFloat() / (intervals.size - 1) * width else width / 2f
-                    val y = height - ((value - minVal + 50f) / range * height)
-                    Offset(x, y)
-                }
-
-                val path = Path()
-                points.forEachIndexed { index, offset ->
-                    if (index == 0) {
-                        path.moveTo(offset.x, offset.y)
-                    } else {
-                        path.lineTo(offset.x, offset.y)
-                    }
-                    drawCircle(
-                        color = Color.Red,
-                        radius = 4.dp.toPx(),
-                        center = offset
-                    )
-                }
-
-                drawPath(
-                    path = path,
-                    color = Color.Blue,
-                    style = Stroke(width = 2.dp.toPx())
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun HeartRateCard(hrValue: Int?, bleState: String, sdnn: Double) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(110.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFE91E63)
-        )
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(text = "Heart Rate", fontSize = 14.sp, color = Color.White)
-                Text(
-                    text = hrValue?.let { "$it BPM" } ?: "-- BPM",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(text = "SDNN (HRV)", fontSize = 14.sp, color = Color.White)
-                Text(
-                    text = String.format(Locale.US, "%.1f ms", sdnn),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(text = bleState, fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f))
-            }
-        }
-    }
-}
-
-@Composable
-fun SmallLoadCard(label: String, load: Double?, modifier: Modifier = Modifier, subtitle: String? = null) {
-    val color = if (load == null) Color.Gray else getNumericLoadColor(load)
-    Card(
-        modifier = modifier.height(80.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = color
-        )
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(text = label, fontSize = 12.sp, color = Color.White)
-            Text(
-                text = if (load == null) "--" else String.format(Locale.US, "%.1f", load),
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            if (subtitle != null) {
-                Text(text = subtitle, fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
-            }
-        }
-    }
-}
-
-@Composable
-fun CognitiveLoadCard(title: String, load: Double?, level: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = getLevelColor(level)
-        )
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = title,
-                fontSize = 18.sp,
-                color = Color.White
-            )
-            Text(
-                text = if (load == null) "Waiting..." else String.format(Locale.US, "%.1f", load),
-                fontSize = 38.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            if (load != null) {
-                Text(
-                    text = level,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
-            }
-        }
-    }
-}
-
-fun getNumericLoadColor(load: Double): Color {
-    return when {
-        load < 50.0 -> Color(0xFF4CAF50) // Low - Green
-        load < 100.0 -> Color(0xFFFFC107) // Medium - Amber
-        else -> Color(0xFFF44336)      // High - Red
-    }
-}
-
-fun getLevelColor(level: String): Color {
-    return when (level) {
-        "Low" -> Color(0xFF4CAF50)
-        "Medium" -> Color(0xFFFFC107)
-        "High" -> Color(0xFFF44336)
-        "Overload" -> Color(0xFF9C27B0) // Purple for Overload
-        else -> Color.Gray
-    }
-}
-
-@Composable
-fun ParameterRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = label, fontWeight = FontWeight.Medium)
-        Text(text = value, color = MaterialTheme.colorScheme.primary)
-    }
-}
-
-/**
- * Minimal in-tour status surface for AUDIO_ONLY mode (§7.0: "no in-tour content UI").
- * Shows only playback/POI/load state — content itself is audio-only.
- */
-@Composable
-fun AudioTourStatusCard(
-    isPlaying: Boolean,
-    currentArea: String,
-    loadLevel: String,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = getLevelColor(loadLevel))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = if (isPlaying) "Audio tour playing" else "Audio tour paused",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "At: ${currentArea.replace('_', ' ')}  •  Load: $loadLevel",
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.9f)
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Eyes-free mode: playback continues with the screen off.\nUse the notification or headset buttons to control the tour.",
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.75f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
         }
     }
 }

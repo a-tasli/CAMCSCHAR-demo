@@ -106,30 +106,9 @@ class RetentionSurveyManager(
             var uploadSuccess = false
             var uploadMsg = "No server configured"
             if (!serverUrl.isNullOrBlank()) {
-                try {
-                    val finalUrl = if (serverUrl.endsWith("/api/upload")) serverUrl else "$serverUrl/api/upload"
-                    val url = java.net.URL(finalUrl)
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json; utf-8")
-                    conn.setRequestProperty("Accept", "application/json")
-                    conn.connectTimeout = 6000
-                    conn.readTimeout = 6000
-                    conn.doOutput = true
-
-                    conn.outputStream.use { os ->
-                        val bytes = unifiedJsonString.toByteArray(Charsets.UTF_8)
-                        os.write(bytes, 0, bytes.size)
-                    }
-
-                    val code = conn.responseCode
-                    uploadSuccess = (code == 200 || code == 201)
-                    uploadMsg = if (uploadSuccess) "Uploaded successfully (HTTP $code)" else "Server returned HTTP $code"
-                    Log.d("RetentionSurveyManager", "Upload response: $uploadMsg")
-                } catch (e: Exception) {
-                    uploadMsg = "Upload failed: ${e.message}"
-                    Log.w("RetentionSurveyManager", uploadMsg)
-                }
+                val uploadResult = NetworkUploader.postJson(serverUrl, unifiedJsonString)
+                uploadSuccess = uploadResult.success
+                uploadMsg = uploadResult.message
             }
 
             return@withContext SaveAndUploadResult(

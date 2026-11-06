@@ -3,8 +3,8 @@
 "name": "poi-vertices",
 "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32635" } },
 "features": [
-{"type":"Feature","properties":{"id":1,"distance":80.0},"geometry":{"type":"Point","coordinates":[700422.707051183795556,4529627.432749902829528]}},
-{"type":"Feature","properties":{"id":2,"distance":60.0},"geometry":{"type":"Point","coordinates":[700115.102763346396387,4529582.072674974799156]}},
-{"type":"Feature","properties":{"id":3,"distance":80.0},"geometry":{"type":"Point","coordinates":[700263.583682762691751,4529331.133092463947833]}}
+{"type":"Feature","properties":{"id":1,"name":"amphitheatre","distance":80.0},"geometry":{"type":"Point","coordinates":[700422.707051183795556,4529627.432749902829528]}},
+{"type":"Feature","properties":{"id":2,"name":"lake_memorial","distance":60.0},"geometry":{"type":"Point","coordinates":[700115.102763346396387,4529582.072674974799156]}},
+{"type":"Feature","properties":{"id":3,"name":"tosun_terzioglu_garden","distance":80.0},"geometry":{"type":"Point","coordinates":[700263.583682762691751,4529331.133092463947833]}}
 ]
 }

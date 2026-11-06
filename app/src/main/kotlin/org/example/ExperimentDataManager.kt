@@ -174,21 +174,8 @@ class ExperimentDataManager(private val context: Context) {
         
         try {
             val fileContent = fileToUpload.readText()
-            val finalUrlStr = if(urlStr.endsWith("/api/upload")) urlStr else "$urlStr/api/upload"
-            val url = java.net.URL(finalUrlStr)
-            val connection = url.openConnection() as java.net.HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.setRequestProperty("Content-Type", "application/json; utf-8")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.doOutput = true
-            
-            connection.outputStream.use { os ->
-                val input = fileContent.toByteArray(Charsets.UTF_8)
-                os.write(input, 0, input.size)
-            }
-            
-            val code = connection.responseCode
-            return@withContext code == 200 || code == 201
+            val result = NetworkUploader.postJson(urlStr, fileContent)
+            return@withContext result.success
         } catch (e: Exception) {
             e.printStackTrace()
             Log.e("ExperimentDataManager", "Upload failed: ${e.message}")
