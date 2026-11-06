@@ -1,7 +1,9 @@
 # CAMCSCHAR Demo — Real-Time Cognitive Load Pipeline Specification
 
-**Status:** Implemented (cardiac channel redesign)
-**Last updated:** 2026-11-02
+**Status:** Implemented — **audio-first pivot v2**. Sensing/scoring/fusion pipeline
+(§3–§6) and the audio adaptation layer (§7) are implemented; §7.6 documents the legacy
+v1 behaviour kept under `MULTIMODAL`.
+**Last updated:** 2026-11-06
 **Scope:** Android app (`app/src/main/kotlin/org/example/`) and data schema consumed by `visualizer/`.
 
 This document describes the complete real-time pipeline: how raw sensor streams are
@@ -13,10 +15,16 @@ level drives the adaptive tour, and how everything is logged for the visualizer.
 ## 1. Overview
 
 The system estimates a participant's cognitive load in real time while they walk a
-campus tour, and adapts the audio tour (speech rate, pacing, detail level, image size,
-audio ducking) to that estimate. Load is computed every **1 second** from three scored
-channels — **gait**, **cardiac (HR)**, and a **voice-activity modifier** — plus passive
-streams (GPS, audio) used for logging and presentation.
+campus tour, and adapts a **hands-free audio tour** (speech rate, inter-line pausing,
+script density, checkpoint repetition, audio ducking) to that estimate. Load is
+computed every **1 second** from three scored channels — **gait**, **cardiac (HR)**,
+and a **voice-activity modifier** — plus passive streams (GPS, audio) used for logging
+and presentation.
+
+**Audio-first pivot (v2):** the sensing/fusion pipeline is fully modality-agnostic and
+therefore unchanged; all adaptation weight moves into the audio channel behind a
+`PresentationMode` flag — `MULTIMODAL` (legacy v1 visuals), `AUDIO_FIRST` (minimal
+eyes-free UI) or `AUDIO_ONLY` (no in-tour UI). Details in §7.
 
 ```
  Decathlon BLE armband          Phone step detector        Phone microphone
@@ -256,9 +264,98 @@ extra attentional demand. No bump in "Waiting...".
 
 ---
 
-## 7. Tour adaptation (`TourManager.updateContext`)
+## 7. Tour adaptation (`TourManager.updateContext`) — *v2 audio-first*
 
-In **auto mode** (dynamic condition):
+### 7.0 Presentation modes
+
+Only presentation differs between modes — the load pipeline (§3–§6) and the POI
+scripts are identical.
+
+| Mode | Presentation |
+|---|---|
+| `MULTIMODAL` | Legacy v1 UI: map, transcript, inline/large images (§7.6). Retained for backward comparison. |
+| `AUDIO_FIRST` | Eyes-free by default: media notification + collapsible transcript for the researcher; no images, no map. **Primary study condition.** |
+| `AUDIO_ONLY` | No in-tour UI at all; playback is controlled only via the media notification and headset button; phone stays in the pocket. |
+
+Because the visual channel disappears, all adaptation must live in the audio channel.
+The load level maps to an **`AudioTourParams`** object applied on every tick:
+
+| Parameter | Type | Meaning |
+|---|---|---|
+| `speed` | float | TTS playback rate; applied live mid-utterance via the `TTSManager` `AudioTrack` path (no restart/queue-flush) |
+| `pauseMs` | long | silence inserted between script lines |
+| `density` | enum | `DETAILED` / `SIMPLIFIED` script selection |
+| `checkpoint` | bool | re-speak the previous (key) line once before advancing |
+| `recapOnResume` | bool | on playback resume, re-speak the last completed line before continuing |
+| `ducking` | bool | drop TTS volume to 20 % while `isSpeaking` (participant takes precedence) |
+
+### 7.1 Audio adaptation matrix (auto mode / dynamic condition)
+
+| Level | speed | pauseMs | density | checkpoint | ducking |
+|---|---|---|---|---|---|
+| Low / Waiting | 1.0× | 300 ms | detailed | no | while speaking |
+| Medium | 0.85× | 1500 ms | detailed | no | while speaking |
+| High | 0.75× | 2000 ms | simplified | **yes** | while speaking |
+| Overload | — (playback paused) | — | — | recap on resume | while speaking |
+
+Differences vs. v1 and their rationale:
+
+- **Medium is no longer a purely visual tier.** In v1, Medium differed from Low only by
+  `isLargeImageMode`; with visuals gone, Medium gets its own audio profile — slower
+  rate and longer inter-line gaps give processing time (the auditory analog of reducing
+  visual clutter). Script density stays detailed until High.
+- **High gains checkpoint repetition:** after a (key) line is spoken, it is repeated
+  once before the tour advances. With no transcript to glance back at, repetition is
+  the audio channel's only repair mechanism, so it is reserved for High.
+- **Low inserts a short natural pause (300 ms)** instead of v1's 0 ms — avoids
+  line-concatenation artifacts; also applies to the static control so conditions stay
+  symmetric.
+- **Overload pauses playback** (v1 behaviour). On recovery the tour resumes
+  automatically with a **one-line recap** — the last completed line is re-spoken —
+  then continues (in audio modes there is no visual cue showing where the tour
+  resumed).
+
+### 7.2 Earcons (`AUDIO_FIRST` / `AUDIO_ONLY`)
+
+| Event | Sound |
+|---|---|
+| POI arrival (geofence entry) | short arrival chime before the first line of the POI script |
+| Transition into Overload | attention tone at the moment playback pauses |
+| End of tour / end of script | soft closing tone |
+
+In `MULTIMODAL` the visual UI carries these cues, so earcons are audio-mode-only.
+
+### 7.3 Eyes-free playback control
+
+- `TourService` provides a **media notification with `MediaSession`
+  actions** (play/pause, previous/next); headset/lock-screen media buttons are routed
+  through the same session via a `TourControlBridge` registered by `MainActivity`.
+  Playback continues with the screen off (partial wake lock held while playing); the
+  1 s analysis loop, BLE notifications and step detection keep running via the
+  existing foreground-service machinery.
+- Live `speed`/`ducking` changes act on the *currently playing utterance*
+  (`PlaybackParams` / `AudioTrack.setVolume`), so level-driven adaptation is
+  unobtrusive — no restarts, no queue flushes.
+
+### 7.4 Content conventions
+
+- Key-fact lines in both script variants are marked with a leading `*` in the
+  `scripts/*.txt` files; the parser strips the marker (`ScriptLine.isKeyFact`). When a
+  script has markers, checkpoints repeat a line only when it **is** a key line; when
+  it has none, checkpoints fall back to repeating the previous line. **The shipped
+  scripts do not yet carry `*` markers** — until they are re-authored, High-load
+  checkpoints therefore repeat every line, per the fallback rule.
+- Inline-image references become **spoken scene descriptions** (the narration
+  describes what the participant is looking at); the `MULTIMODAL` parser keeps the
+  current image format. Also pending content re-authoring.
+
+### 7.5 Static mode (control condition)
+
+Unchanged semantics: fixed at the Low configuration (1.0×, detailed script, no
+checkpoints, no recap), **no ducking, no adaptation**; GPS geofencing still triggers
+POI content.
+
+### 7.6 Legacy v1 behaviour (implemented; retained under `MULTIMODAL`)
 
 | Level | TTS speed | Inter-line delay | Detailed script | Large-image mode |
 |---|---|---|---|---|
@@ -267,19 +364,14 @@ In **auto mode** (dynamic condition):
 | High | 0.75× | 1500 ms | no | yes |
 | Overload | — | — | — | yes (and playback is paused) |
 
-- TTS **ducking** while `isSpeaking` (participant voice takes precedence).
-- When the level drops out of Overload and playback was paused, the tour **resumes
-  automatically** at the next script line.
-- **Static mode** (control condition): fixed at Low configuration, no ducking, no
-  adaptation.
-
 ---
 
 ## 8. Data recording (`ExperimentDataManager`)
 
 A sample is written when the state hash changes (event, `trigger: "event"`) or at least
 1 s has elapsed (`trigger: "periodic"`). State hash covers `poi, loadLevel,
-combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode, isSpeaking, scriptLine`.
+combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode, isSpeaking, scriptLine,
+ttsSpeed, interLineDelay, isCheckpointActive, presentationMode`.
 File: `experiment_<timestamp>.json` in app-external storage; flushed every 5 samples and
 on every state change.
 
@@ -297,7 +389,11 @@ on every state change.
 | `load_level` | final level incl. voice bump |
 | `poi`, `script_line` | tour position |
 | `is_speaking` | voice channel output |
-| `is_auto_mode`, `is_detailed_script`, `is_large_image_mode` | tour state |
+| `is_auto_mode`, `is_detailed_script`, `is_large_image_mode` | tour state (`is_large_image_mode` non-trivial only under `MULTIMODAL`) |
+| `tts_speed` | active playback rate (×) *(new, v2)* |
+| `inter_line_delay_ms` | pause inserted between script lines *(new, v2)* |
+| `is_checkpoint_active` | checkpoint repetition on (High) *(new, v2)* |
+| `presentation_mode` | `multimodal` \| `audio_first` \| `audio_only` *(new, v2)* |
 | `lat`, `lon` | GPS |
 | `trigger` | `event` \| `periodic` |
 
@@ -319,6 +415,9 @@ plus a toggleable unified view. Series keys map to logged fields:
 | Step Variance | `step_variance` | right | green |
 | Physical Strain (%HRR) | `physical_strain_score` | right | cyan |
 | Combined Load Index | `combined_load_index` | right | purple |
+
+New v2 fields (`tts_speed`, `inter_line_delay_ms`, `is_checkpoint_active`,
+`presentation_mode`) are logged but not yet charted.
 
 Hovering any chart shows all series' values at that timestamp on every chart (own
 series emphasized). Upload a session JSON or place it at `visualizer/data/latest_experiment.json`.
@@ -345,6 +444,12 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
 | Gait: variability term | (−20)/50 | 20 ms variability = 0 points |
 | Stop rule | 25 | gait score while not walking |
 | Level thresholds | 50 / 100 | Low/Medium/High boundaries |
+| `AudioTourParams.AUDIO_LOW` (§7.1) | 1.0× / 300 ms | audio-mode Low pins (also the static control's pause) |
+| `AudioTourParams.AUDIO_MEDIUM` (§7.1) | 0.85× / 1500 ms | audio-mode Medium pins |
+| `AudioTourParams.AUDIO_HIGH` (§7.1) | 0.75× / 2000 ms / simplified | audio-mode High pins (checkpoint on) |
+| Legacy MULTIMODAL pins (§7.6) | 1.0×·0 / 0.75×·1500 / 0.75×·1500 ms | v1 speed·delay per level |
+| POI-arrival earcon lead-in | 900 ms | chime plays just before the first POI line (§7.2) |
+| Voice duck level | 20 % | TTS volume while `isSpeaking` |
 
 ---
 
@@ -357,12 +462,20 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
    (consent/instructions window) so `restingHr` converges to the true resting floor.
 2. **Note the participant's age** — currently only affects HRmax via the default; for a
    20–30 y cohort the effect on strain is ±3 %, so this is optional precision.
+3. **Fix the TTS engine and voice** across all experimental devices (or use a single
+   device for every participant). Android TTS voices differ per manufacturer, and in
+   the audio-first pipeline the voice is the *only* output channel — voice variance is
+   now a validity threat.
 
 **Post-hoc tuning (from the first session's logs, in the visualizer):**
 - If `mental_hr_bpm` is pinned at ≤ 0 while standing at POIs → lower
   `walkingHrCoefficient` (try 0.2). If it spikes during *steady* walking → raise it.
 - If the tour never reaches "High" → lower `STRAIN_FULL_SCALE_HRR` (0.50 → 0.35), since
   the new channel is deliberately more conservative than the old HRV formula.
+- **After switching presentation mode** (multimodal → audio-first/audio-only), expect
+  the index to run lower: removing the visual channel removes a constant attentional
+  demand. Retune the §6 level thresholds per mode, and never compare raw indices
+  across modes.
 
 ---
 
@@ -381,6 +494,12 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
 - **%HRR as physical strain:** Karvonen 1957; HRmax from Tanaka et al. 2001.
 - **Wristband cognitive-load features (HR, RR, temp, EDA):** Borisov et al. 2021,
   *Computers in Human Behavior Reports* (`wristband.pdf`), CogLoad@UbiComp 2020.
+- **Audio-first pivot rationale:** location-triggered audio is the de-facto consumer
+  format for cultural-heritage tours (handheld audio guides; GPS-triggered walking
+  tours such as VoiceMap / izi.TRAVEL). A single-modality audio output removes the
+  cross-modal confound from the adaptation experiment and matches the eyes-free /
+  accessibility expectations of the sector. Cognitive-load-adaptive *pacing* of
+  narration is the novel contribution the pivot foregrounds.
 
 ## 13. Known limitations
 
@@ -395,3 +514,8 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
    lower now; retune `STRAIN_FULL_SCALE_HRR` if needed (§11).
 5. **No single-channel trust metric:** if the armband disconnects, the system silently
    falls back to gait-only scoring ("Waiting..." only before any HR arrives).
+6. **Audio-mode thresholds are inherited from multimodal tuning** (§11): baseline load
+   runs lower without a visual channel; index values are not comparable across
+   presentation modes until thresholds are retuned per mode.
+7. **Device-dependent TTS voices** (§11): cross-participant comparison requires a fixed
+   engine/voice, otherwise the narration content itself differs between participants.
