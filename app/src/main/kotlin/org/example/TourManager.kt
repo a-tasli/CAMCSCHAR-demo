@@ -46,13 +46,15 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private val _presentationMode = MutableStateFlow(PresentationMode.AUDIO_FIRST)
     val presentationMode: StateFlow<PresentationMode> = _presentationMode.asStateFlow()
 
-    private val _audioParams = MutableStateFlow(AudioTourParams.static(PresentationMode.AUDIO_FIRST))
-    val audioParams: StateFlow<AudioTourParams> = _audioParams.asStateFlow()
+    val earconManager = EarconManager(context)
+    val modalityManager = ModalityManager()
+    val auditoryModality = AuditoryModality(ttsManager, earconManager)
+
+    val audioParams: StateFlow<AudioTourParams>
+        get() = auditoryModality.currentParams
 
     private val _loadLevel = MutableStateFlow("Waiting...")
     val loadLevel: StateFlow<String> = _loadLevel.asStateFlow()
-
-    private val earconManager = EarconManager(context)
 
     /** True when running an audio mode (AUDIO_FIRST / AUDIO_ONLY). */
     private val isAudioMode: Boolean
@@ -141,11 +143,11 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     fun resetAppState() {
         if (_isPlaying.value) {
             delayJob?.cancel()
-            ttsManager.stop()
+            auditoryModality.stop()
             _isPlaying.value = false
         }
         delayJob?.cancel()
-        ttsManager.stop()
+        auditoryModality.stop()
         guideFinished = false
         _completedPois.value = emptySet()
         _isEndOfTourReached.value = false
@@ -158,7 +160,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         pausedByOverload = false
         lastSpokenText = null
         _loadLevel.value = "Waiting..."
-        _audioParams.value = AudioTourParams.static(_presentationMode.value)
+        modalityManager.resetAll()
         loadScripts("guide")
         _history.value = listOf(HistoryItem("Welcome to the Campus Tour! Press 'Start Tour' to begin."))
     }
@@ -225,8 +227,8 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                         _isPlaying.value = true
                         if (isAudioMode) {
                             // POI arrival earcon just before the first line of the POI script (§7.2)
-                            earconManager.playPoiArrival()
-                            playCurrentIndexWithDelay(extraLeadInMs = 900L)
+                            auditoryModality.playPoiArrival()
+                            playCurrentIndexWithDelay(extraLeadInMs = auditoryModality.config.poiArrivalLeadInMs)
                         } else {
                             playCurrentIndexWithDelay()
                         }
@@ -239,6 +241,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     init {
+        modalityManager.register(auditoryModality)
         loadScripts("guide")
 
         scope.launch {
@@ -291,7 +294,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     fun selectLocation(location: String) {
         if (_isPlaying.value) {
             delayJob?.cancel()
-            ttsManager.stop()
+            auditoryModality.stop()
             _isPlaying.value = false
         }
         loadScripts(location)
@@ -357,7 +360,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         )
         _history.value = updatedHistory
         currentUtteranceId = UUID.randomUUID().toString()
-        ttsManager.speak(line.text, currentUtteranceId!!)
+        auditoryModality.speak(line.text, currentUtteranceId!!)
     }
 
     private fun endOfScriptReached() {
@@ -367,7 +370,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         _history.value = updatedHistory
         recordPoiCompleted(_currentLocation.value)
         if (isAudioMode) {
-            earconManager.playEndOfTour()
+            auditoryModality.playEndOfTour()
         }
     }
 
@@ -384,8 +387,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     fun setPresentationMode(mode: PresentationMode) {
         _presentationMode.value = mode
-        // Re-apply the current configuration under the new mode; ducking (if any) is
-        // re-confirmed by the 1 s analysis loop within a tick.
+        // Re-apply the current configuration under the new mode.
         updateContext(currentLoadLevel, false)
     }
 
@@ -395,7 +397,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             pausedByOverload = false
         }
         // Static mode: fixed at what we show to low cognitive load users (small images,
-        // fast tts, detailed script). Audio should not duck in static mode.
+        // fast tts, detailed script).
         updateContext(currentLoadLevel, false)
     }
 
@@ -413,7 +415,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     fun finishTour() {
         delayJob?.cancel()
-        ttsManager.stop()
+        auditoryModality.stop()
         _isPlaying.value = false
         guideFinished = true
 
@@ -423,7 +425,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         recordPoiCompleted(_currentLocation.value)
         _isEndOfTourReached.value = true
         if (isAudioMode) {
-            earconManager.playEndOfTour()
+            auditoryModality.playEndOfTour()
         }
         _tourFinishedEvent.tryEmit(Unit)
     }
@@ -453,21 +455,25 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     }
 
     /**
-     * Maps the fused load level to audio parameters per the adaptation matrix
-     * (§7.1 for audio modes; §7.6 legacy pins under MULTIMODAL) and applies them.
+     * Broadcasts cognitive load state to all registered presentation modalities
+     * and coordinates playback state transitions (e.g. overload pause / recap).
      */
-    fun updateContext(level: String, isSpeaking: Boolean) {
+    fun updateContext(level: String, isSpeaking: Boolean = false) {
         val previousLevel = currentLoadLevel
         currentLoadLevel = level
         _loadLevel.value = level
 
-        if (_isAutoMode.value) {
-            val params = audioParamsForLevel(level)
-                .copy(duckWhileSpeaking = true, recapOnResume = isAudioMode)
-            _audioParams.value = params
+        val loadState = CognitiveLoadState(
+            loadLevel = level,
+            previousLevel = previousLevel,
+            isSpeaking = isSpeaking,
+            isAutoMode = _isAutoMode.value,
+            isAudioMode = isAudioMode
+        )
+        modalityManager.notifyCognitiveLoadChanged(loadState)
 
-            ttsManager.setDucking(isSpeaking)
-            ttsManager.setSpeed(params.speed)
+        if (_isAutoMode.value) {
+            val params = auditoryModality.currentParams.value
             currentDelay = params.pauseMs
             _isDetailed.value = params.detailed
             checkpointActive = params.checkpoint
@@ -483,13 +489,10 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                 _isLargeImageMode.value = false
             }
 
-            // Overload transition (§7.1): attention earcon; remember that WE paused
+            // Overload transition (§7.1): remember that WE paused
             // playback so recovery can auto-resume with a recap.
             if (level == "Overload" && previousLevel != "Overload" && _isPlaying.value) {
                 pausedByOverload = true
-                if (isAudioMode) {
-                    earconManager.playOverload()
-                }
             }
 
             // Recovery: resume automatically; in audio modes lead with a one-line recap
@@ -501,53 +504,25 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                 if (currentIndex < maxIndex) {
                     _isPlaying.value = true
                     val recapText = lastSpokenText
-                    if (isAudioMode && recapText != null) {
+                    if (isAudioMode && recapText != null && params.recapOnResume) {
                         val updatedHistory = _history.value.toMutableList()
                         updatedHistory.add(HistoryItem(text = "(recap) $recapText", isUtterance = false, location = _currentLocation.value))
                         _history.value = updatedHistory
                         isRecapUtterance = true
                         currentUtteranceId = UUID.randomUUID().toString()
-                        ttsManager.speak(recapText, currentUtteranceId!!)
+                        auditoryModality.speak(recapText, currentUtteranceId!!)
                     } else {
                         playCurrentIndexWithDelay()
                     }
                 }
             }
         } else {
-            // Static mode (§7.5): fixed at the Low configuration, no ducking, no adaptation.
-            val staticParams = AudioTourParams.static(_presentationMode.value)
-                .copy(recapOnResume = isAudioMode)
-            _audioParams.value = staticParams
-
-            ttsManager.setDucking(false)
-            ttsManager.setSpeed(staticParams.speed)
+            // Static mode (§7.5): fixed at the Low configuration, no adaptation.
+            val staticParams = auditoryModality.currentParams.value
             currentDelay = staticParams.pauseMs
             _isDetailed.value = true
             checkpointActive = false
             _isLargeImageMode.value = false
-        }
-    }
-
-    private fun audioParamsForLevel(level: String): AudioTourParams {
-        val audio = isAudioMode
-        return when (level) {
-            "Low", "Waiting..." -> if (audio) AudioTourParams.AUDIO_LOW else AudioTourParams.MM_LOW
-            "Medium" -> if (audio) AudioTourParams.AUDIO_MEDIUM else AudioTourParams.MM_MEDIUM
-            "High" -> if (audio) AudioTourParams.AUDIO_HIGH else AudioTourParams.MM_HIGH
-            "Overload" -> {
-                // Playback is paused by the Overload rule; keep the last pins so the
-                // logger records paused=true with the pre-overload configuration.
-                val last = _audioParams.value
-                val base = if (audio) AudioTourParams.AUDIO_HIGH else AudioTourParams.MM_OVERLOAD
-                base.copy(
-                    speed = last?.speed ?: base.speed,
-                    pauseMs = last?.pauseMs ?: base.pauseMs,
-                    detailed = last?.detailed ?: base.detailed,
-                    checkpoint = false,
-                    paused = true
-                )
-            }
-            else -> if (audio) AudioTourParams.AUDIO_LOW else AudioTourParams.MM_LOW
         }
     }
 
@@ -615,7 +590,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
             _history.value = updatedHistory
 
             currentUtteranceId = UUID.randomUUID().toString()
-            ttsManager.speak(line.text, currentUtteranceId!!)
+            auditoryModality.speak(line.text, currentUtteranceId!!)
         } else {
             // In case the scripts have different lengths
             endOfScriptReached()

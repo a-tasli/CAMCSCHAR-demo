@@ -32,4 +32,47 @@ class GaitAnalyzerTest {
         println("Cognitive Load Index: ${features.combinedLoadIndex}")
         println("Cognitive Load Level: ${features.loadLevel}")
     }
+
+    @Test
+    fun testVoiceDetectionModifiesCognitiveLoadWithoutDucking() {
+        val analyzer = GaitAnalyzer()
+        val startNanos = System.nanoTime()
+        val stepIntervalMs = 500L
+
+        for (i in 0 until 5) {
+            val currentNanos = startNanos + (i * stepIntervalMs * 1_000_000L)
+            analyzer.addStep(currentNanos)
+        }
+
+        // Without speech: baseline level is determined by gait/HR
+        val baselineFeatures = analyzer.analyze(currentHr = 70, isSpeaking = false)
+        assertNotNull(baselineFeatures)
+        val baseLevel = baselineFeatures.loadLevel
+
+        // With voice detection active (isSpeaking = true): cognitive load should be bumped +1 tier
+        val voiceFeatures = analyzer.analyze(currentHr = 70, isSpeaking = true)
+        assertNotNull(voiceFeatures)
+        val voiceBumpedLevel = voiceFeatures.loadLevel
+
+        val expectedLevel = when (baseLevel) {
+            "Low" -> "Medium"
+            "Medium" -> "High"
+            "High" -> "Overload"
+            else -> baseLevel
+        }
+        kotlin.test.assertEquals(expectedLevel, voiceBumpedLevel, "Voice activity should bump cognitive load tier")
+    }
+
+    @Test
+    fun testAudioTourParamsDuckingDisabled() {
+        // Ducking should be false across all default configurations
+        kotlin.test.assertFalse(AudioTourParams.AUDIO_LOW.duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.AUDIO_MEDIUM.duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.AUDIO_HIGH.duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.MM_LOW.duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.MM_MEDIUM.duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.MM_HIGH.duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.static(PresentationMode.AUDIO_FIRST).duckWhileSpeaking)
+        kotlin.test.assertFalse(AudioTourParams.static(PresentationMode.MULTIMODAL).duckWhileSpeaking)
+    }
 }

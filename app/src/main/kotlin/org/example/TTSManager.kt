@@ -127,10 +127,10 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun setDucking(duck: Boolean) {
-        if (isDucked == duck) return
-        isDucked = duck
-        currentVolume = if (duck) 0.2f else 1.0f
-        audioTrack?.setVolume(currentVolume)
+        // Audio ducking is disabled in this codebase; volume remains at 1.0f
+        isDucked = false
+        currentVolume = 1.0f
+        audioTrack?.setVolume(1.0f)
     }
 
     fun speak(text: String, utteranceId: String) {

@@ -26,7 +26,7 @@ enum class PresentationMode {
  * @param detailed         `true` → detailed script, `false` → simplified script
  * @param checkpoint       re-speak the just-spoken key line once before advancing (High)
  * @param recapOnResume    on Overload recovery, re-speak the last completed line first
- * @param duckWhileSpeaking  volume-duck TTS while `isSpeaking` (auto mode only)
+ * @param duckWhileSpeaking  volume-duck TTS while `isSpeaking` (disabled)
  * @param paused           playback paused by Overload rule (§7.1 Overload row)
  */
 data class AudioTourParams(
@@ -50,7 +50,7 @@ data class AudioTourParams(
         val MM_HIGH: AudioTourParams = AudioTourParams(0.75f, 1500L, detailed = false)
         val MM_OVERLOAD: AudioTourParams = AudioTourParams(0.75f, 1500L, detailed = false, paused = true)
 
-        /** Static control condition (§7.5): Low-configuration pins, no ducking. */
+        /** Static control condition (§7.5): Low-configuration pins. */
         fun static(mode: PresentationMode): AudioTourParams =
             if (mode == PresentationMode.MULTIMODAL) MM_LOW else AUDIO_LOW
     }

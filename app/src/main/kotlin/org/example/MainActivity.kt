@@ -959,9 +959,9 @@ fun GaitApp(
 
                     Text(
                         text = if (isAutoMode)
-                            "• Dynamic (Auto Mode): the audio guide adapts speech rate, inter-line pauses, script density, key-fact repetition (checkpoints) and ducking to the real-time load level (pipeline-spec §7.1)."
+                            "• Dynamic (Auto Mode): the audio guide adapts speech rate, inter-line pauses, script density, and key-fact repetition (checkpoints) to the real-time load level (pipeline-spec §7.1)."
                         else
-                            "• Static (Control): fixed Low-configuration delivery — detailed script, 1.0x TTS, no ducking, no adaptation (§7.5).",
+                            "• Static (Control): fixed Low-configuration delivery — detailed script, 1.0x TTS, no adaptation (§7.5).",
                         fontSize = 11.sp,
                         color = Color(0xFF006064),
                         lineHeight = 15.sp

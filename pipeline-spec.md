@@ -16,7 +16,7 @@ level drives the adaptive tour, and how everything is logged for the visualizer.
 
 The system estimates a participant's cognitive load in real time while they walk a
 campus tour, and adapts a **hands-free audio tour** (speech rate, inter-line pausing,
-script density, checkpoint repetition, audio ducking) to that estimate. Load is
+script density, checkpoint repetition) to that estimate. Load is
 computed every **1 second** from three scored channels — **gait**, **cardiac (HR)**,
 and a **voice-activity modifier** — plus passive streams (GPS, audio) used for logging
 and presentation.
@@ -127,7 +127,7 @@ Runs a dedicated thread reading 8 kHz mono PCM in 1024-sample (~128 ms) chunks:
 4. **Hangover:** `isSpeaking` stays true for **3 s** after the last detected speech
    (`isCooldown` flag is exposed during the hangover).
 
-Output: boolean `isSpeaking` — used both as a load modifier and for TTS ducking.
+Output: boolean `isSpeaking` — used as a load modifier (TTS audio ducking is disabled).
 
 ### 3.5 Location (`LocationSensorManager`)
 
@@ -289,16 +289,16 @@ The load level maps to an **`AudioTourParams`** object applied on every tick:
 | `density` | enum | `DETAILED` / `SIMPLIFIED` script selection |
 | `checkpoint` | bool | re-speak the previous (key) line once before advancing |
 | `recapOnResume` | bool | on playback resume, re-speak the last completed line before continuing |
-| `ducking` | bool | drop TTS volume to 20 % while `isSpeaking` (participant takes precedence) |
+| `ducking` | bool | drop TTS volume while `isSpeaking` (disabled in this codebase) |
 
 ### 7.1 Audio adaptation matrix (auto mode / dynamic condition)
 
 | Level | speed | pauseMs | density | checkpoint | ducking |
 |---|---|---|---|---|---|
-| Low / Waiting | 1.0× | 300 ms | detailed | no | while speaking |
-| Medium | 0.85× | 1500 ms | detailed | no | while speaking |
-| High | 0.75× | 2000 ms | simplified | **yes** | while speaking |
-| Overload | — (playback paused) | — | — | recap on resume | while speaking |
+| Low / Waiting | 1.0× | 300 ms | detailed | no | disabled |
+| Medium | 0.85× | 1500 ms | detailed | no | disabled |
+| High | 0.75× | 2000 ms | simplified | **yes** | disabled |
+| Overload | — (playback paused) | — | — | recap on resume | disabled |
 
 Differences vs. v1 and their rationale:
 
@@ -335,8 +335,8 @@ In `MULTIMODAL` the visual UI carries these cues, so earcons are audio-mode-only
   Playback continues with the screen off (partial wake lock held while playing); the
   1 s analysis loop, BLE notifications and step detection keep running via the
   existing foreground-service machinery.
-- Live `speed`/`ducking` changes act on the *currently playing utterance*
-  (`PlaybackParams` / `AudioTrack.setVolume`), so level-driven adaptation is
+- Live `speed` changes act on the *currently playing utterance*
+  (`PlaybackParams`), so level-driven adaptation is
   unobtrusive — no restarts, no queue flushes.
 
 ### 7.4 Content conventions
@@ -451,7 +451,7 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
 | `AudioTourParams.AUDIO_HIGH` (§7.1) | 0.75× / 2000 ms / simplified | audio-mode High pins (checkpoint on) |
 | Legacy MULTIMODAL pins (§7.6) | 1.0×·0 / 0.75×·1500 / 0.75×·1500 ms | v1 speed·delay per level |
 | POI-arrival earcon lead-in | 900 ms | chime plays just before the first POI line (§7.2) |
-| Voice duck level | 20 % | TTS volume while `isSpeaking` |
+| Voice duck level | 100 % (disabled) | TTS volume while `isSpeaking` (ducking disabled) |
 
 ---
 
