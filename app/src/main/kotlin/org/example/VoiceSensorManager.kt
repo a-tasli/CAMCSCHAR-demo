@@ -235,10 +235,12 @@ class VoiceSensorManager(private val context: Context) {
         audioTensor.use {
             stateTensor.use {
                 session.run(mapOf("audio_in" to audioTensor, "state_in" to stateTensor)).use { result ->
-                    val probTensor = result.get("probability") as OnnxTensor
-                    val prob = probTensor.floatBuffer.get()
-                    val newState = result.get("state_out") as OnnxTensor
-                    newState.floatBuffer.get(vadState) // carry state into the next chunk
+                    val probTensor = (result.get("probability").orElse(null) ?: result.get(0)) as OnnxTensor
+                    val prob = probTensor.floatBuffer.get(0)
+                    val newState = (result.get("state_out").orElse(null) ?: result.get(1)) as OnnxTensor
+                    val stateBuf = newState.floatBuffer
+                    stateBuf.rewind()
+                    stateBuf.get(vadState) // carry state into the next chunk
                     return prob
                 }
             }
