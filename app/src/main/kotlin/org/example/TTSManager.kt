@@ -31,7 +31,9 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     val onUtteranceCompleted: SharedFlow<String> = _onUtteranceCompleted.asSharedFlow()
 
     init {
-        tts = TextToSpeech(context, this)
+        try {
+            tts = TextToSpeech(context, this)
+        } catch (_: Throwable) {}
     }
 
     override fun onInit(status: Int) {

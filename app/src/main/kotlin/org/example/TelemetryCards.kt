@@ -114,7 +114,7 @@ fun SmallLoadCard(label: String, load: Double?, modifier: Modifier = Modifier, s
 }
 
 @Composable
-fun CognitiveLoadCard(title: String, load: Double?, level: String) {
+fun CognitiveLoadCard(title: String, load: Double?, level: String, isManual: Boolean = false) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -129,20 +129,27 @@ fun CognitiveLoadCard(title: String, load: Double?, level: String) {
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = title,
+                text = if (isManual) "$title (Manual)" else title,
                 fontSize = 18.sp,
                 color = Color.White
             )
             Text(
-                text = if (load == null) "Waiting..." else String.format(Locale.US, "%.1f", load),
+                text = if (load == null) (if (level != "Waiting...") level else "Waiting...") else String.format(Locale.US, "%.1f", load),
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
             if (load != null) {
                 Text(
-                    text = level,
+                    text = if (isManual) "$level (Manual Override)" else level,
                     fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+            } else if (isManual && level != "Waiting...") {
+                Text(
+                    text = "(Manual Override)",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White.copy(alpha = 0.9f)
                 )

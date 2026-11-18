@@ -342,11 +342,10 @@ In `MULTIMODAL` the visual UI carries these cues, so earcons are audio-mode-only
 ### 7.4 Content conventions
 
 - Key-fact lines in both script variants are marked with a leading `*` in the
-  `scripts/*.txt` files; the parser strips the marker (`ScriptLine.isKeyFact`). When a
-  script has markers, checkpoints repeat a line only when it **is** a key line; when
-  it has none, checkpoints fall back to repeating the previous line. **The shipped
-  scripts do not yet carry `*` markers** — until they are re-authored, High-load
-  checkpoints therefore repeat every line, per the fallback rule.
+  `scripts/*.txt` files; the parser strips the marker (`ScriptLine.isKeyFact`). Checkpoints
+  repeat a line once before advancing only when it **is** a key-fact line (`ScriptLine.isKeyFact`).
+  Unmarked lines are spoken once without checkpoint repetition so general narration
+  is not repeated.
 - Inline-image references become **spoken scene descriptions** (the narration
   describes what the participant is looking at); the `MULTIMODAL` parser keeps the
   current image format. Also pending content re-authoring.

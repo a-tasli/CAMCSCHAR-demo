@@ -48,6 +48,9 @@ fun GaitApp(
     val resetTrigger by tourManager.manualGpsResetTrigger.collectAsState()
     val isEndOfTourReached by tourManager.isEndOfTourReached.collectAsState()
     val completedPois by tourManager.completedPois.collectAsState()
+    val isManualLoadMode by tourManager.isManualLoadMode.collectAsState()
+    val manualLoadLevel by tourManager.manualLoadLevel.collectAsState()
+    val currentLoadLevel by tourManager.loadLevel.collectAsState()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -238,6 +241,17 @@ fun GaitApp(
                         }
                     }
 
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
+                    ManualCognitiveLoadControl(
+                        isManualLoadMode = isManualLoadMode,
+                        manualLoadLevel = manualLoadLevel,
+                        onManualLoadModeChange = { tourManager.setManualLoadMode(it) },
+                        onManualLoadLevelChange = { tourManager.setManualLoadLevel(it) }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
                     Text(
                         text = "Current POI Area: ${if (currentArea == "None") "None" else currentArea.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }}",
                         fontSize = 14.sp,
@@ -351,7 +365,72 @@ fun GaitApp(
                 SmallLoadCard("Heart", features?.hrLoadIndex ?: 0.0, Modifier.weight(1f))
             }
 
-            CognitiveLoadCard("Combined Load", features?.combinedLoadIndex, features?.loadLevel ?: "Waiting...")
+            CognitiveLoadCard(
+                title = "Combined Load",
+                load = features?.combinedLoadIndex,
+                level = currentLoadLevel,
+                isManual = isManualLoadMode
+            )
+
+            // Quick tier selector in Cognitive Load Estimations
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFEEEEEE))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf("Low", "Medium", "High", "Overload").forEach { level ->
+                    val isSelected = isManualLoadMode && currentLoadLevel == level
+                    val levelColor = getLevelColor(level)
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                tourManager.setManualLoadLevel(level)
+                                if (!isManualLoadMode) {
+                                    tourManager.setManualLoadMode(true)
+                                }
+                            },
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isSelected) levelColor else Color.Transparent
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = level,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = if (isSelected) Color.White else Color.DarkGray
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isManualLoadMode) "Manual Override: $currentLoadLevel" else "Automatic Calculation",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isManualLoadMode) getLevelColor(currentLoadLevel) else Color.Gray
+                )
+                if (isManualLoadMode) {
+                    TextButton(
+                        onClick = { tourManager.setManualLoadMode(false) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) {
+                        Text("Revert to Auto", fontSize = 11.sp)
+                    }
+                }
+            }
 
             // Voice Activity Indicator
             Row(
@@ -416,5 +495,109 @@ fun GaitApp(
                 color = Color.Gray
             )
         }
+    }
+}
+
+@Composable
+fun ManualCognitiveLoadControl(
+    isManualLoadMode: Boolean,
+    manualLoadLevel: String,
+    onManualLoadModeChange: (Boolean) -> Unit,
+    onManualLoadLevelChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Manual Cognitive Load Mode",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                Text(
+                    text = if (isManualLoadMode) "Override Active: $manualLoadLevel" else "Automatic Calculation",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isManualLoadMode) getLevelColor(manualLoadLevel) else Color(0xFF00796B)
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (isManualLoadMode) "Manual" else "Auto",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isManualLoadMode) Color(0xFFE65100) else Color(0xFF00796B),
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+                Switch(
+                    checked = isManualLoadMode,
+                    onCheckedChange = onManualLoadModeChange
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFFB2EBF2))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf("Low", "Medium", "High", "Overload").forEach { level ->
+                val isSelected = manualLoadLevel == level
+                val levelColor = getLevelColor(level)
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            onManualLoadLevelChange(level)
+                            if (!isManualLoadMode) {
+                                onManualLoadModeChange(true)
+                            }
+                        },
+                    shape = RoundedCornerShape(6.dp),
+                    color = when {
+                        isSelected && isManualLoadMode -> levelColor
+                        isSelected && !isManualLoadMode -> levelColor.copy(alpha = 0.35f)
+                        else -> Color.Transparent
+                    }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = level,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = when {
+                                isSelected && isManualLoadMode -> Color.White
+                                isSelected && !isManualLoadMode -> Color.DarkGray
+                                else -> Color.DarkGray.copy(alpha = 0.75f)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = if (isManualLoadMode)
+                "• Manual Override ON: real-time automatic calculation overridden. Audio adaptation, script pauses, repetition, and earcons follow '$manualLoadLevel' (§7.1)."
+            else
+                "• Manual Override OFF: cognitive load calculated automatically from gait + cardiac sensors. Toggling on will override calculation with selected level.",
+            fontSize = 11.sp,
+            color = Color(0xFF006064),
+            lineHeight = 15.sp
+        )
     }
 }

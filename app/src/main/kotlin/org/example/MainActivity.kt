@@ -260,7 +260,13 @@ fun MainAppScreen(
                 val curLon = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLon.value else locationSensorManager.location.value?.longitude
 
                 val computedFeatures = analyzer.analyze(currentHr, speaking)
-                features = computedFeatures
+                val effectiveLevel = if (tourManager.isManualLoadMode.value) {
+                    tourManager.manualLoadLevel.value
+                } else {
+                    computedFeatures?.loadLevel ?: "Waiting..."
+                }
+                val effectiveFeatures = computedFeatures?.copy(loadLevel = effectiveLevel)
+                features = effectiveFeatures
                 stepIntervals = analyzer.getStepIntervals()
                 tourManager.updateContext(computedFeatures?.loadLevel ?: "Waiting...", speaking)
 
@@ -272,7 +278,7 @@ fun MainAppScreen(
                     lat = curLat,
                     lon = curLon,
                     poi = tourManager.currentArea.value,
-                    loadLevel = computedFeatures?.loadLevel ?: "Waiting...",
+                    loadLevel = effectiveLevel,
                     combinedLoadIndex = computedFeatures?.combinedLoadIndex,
                     physicalStrain = computedFeatures?.physicalStrainScore ?: 0.0,
                     mentalHr = computedFeatures?.mentalHrBpm ?: 0.0,

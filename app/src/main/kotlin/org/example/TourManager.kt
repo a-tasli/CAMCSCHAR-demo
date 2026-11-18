@@ -66,6 +66,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private var isRecapUtterance = false
     private var pausedByOverload = false
     private var lastSpokenText: String? = null
+    private var lastSpokenIndex = -1
 
     var currentIndex = 0
         private set
@@ -100,6 +101,15 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
     private val _manualGpsResetTrigger = MutableStateFlow(0)
     val manualGpsResetTrigger: StateFlow<Int> = _manualGpsResetTrigger.asStateFlow()
+
+    private val _isManualLoadMode = MutableStateFlow(false)
+    val isManualLoadMode: StateFlow<Boolean> = _isManualLoadMode.asStateFlow()
+
+    private val _manualLoadLevel = MutableStateFlow("Low")
+    val manualLoadLevel: StateFlow<String> = _manualLoadLevel.asStateFlow()
+
+    private var lastAutoLoadLevel: String = "Waiting..."
+    private var lastIsSpeaking: Boolean = false
 
     private val _stopAndUploadTrigger = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val stopAndUploadTrigger = _stopAndUploadTrigger.asSharedFlow()
@@ -159,7 +169,9 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         isRecapUtterance = false
         pausedByOverload = false
         lastSpokenText = null
-        _loadLevel.value = "Waiting..."
+        lastSpokenIndex = -1
+        _loadLevel.value = if (_isManualLoadMode.value) _manualLoadLevel.value else "Waiting..."
+        lastAutoLoadLevel = "Waiting..."
         modalityManager.resetAll()
         loadScripts("guide")
         _history.value = listOf(HistoryItem("Welcome to the Campus Tour! Press 'Start Tour' to begin."))
@@ -194,11 +206,33 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         checkLocation(lat, lon)
     }
 
+    fun setManualLoadMode(enabled: Boolean) {
+        _isManualLoadMode.value = enabled
+        if (enabled) {
+            updateContext(_manualLoadLevel.value, lastIsSpeaking, fromManual = true)
+        } else {
+            updateContext(lastAutoLoadLevel, lastIsSpeaking, fromManual = false)
+        }
+    }
+
+    fun setManualLoadLevel(level: String) {
+        _manualLoadLevel.value = level
+        if (_isManualLoadMode.value) {
+            updateContext(level, lastIsSpeaking, fromManual = true)
+        }
+    }
+
     private var currentLoadLevel = "Waiting..."
     private var delayJob: Job? = null
     private var currentDelay = 0L
 
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = CoroutineScope(
+        try {
+            Dispatchers.Main.also { it.isDispatchNeeded(kotlin.coroutines.EmptyCoroutineContext) }
+        } catch (_: Throwable) {
+            Dispatchers.Unconfined
+        }
+    )
 
     typealias POI = org.example.POI
 
@@ -246,6 +280,10 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                     if (isRecapUtterance) {
                         // A recap re-spoke the last completed line; continue from where the tour left off
                         isRecapUtterance = false
+                        lastCheckpointRepeatedIndex = currentIndex
+                        if (currentIndex == lastSpokenIndex) {
+                            currentIndex++
+                        }
                         if (_isPlaying.value) {
                             if (currentIndex < maxIndex) {
                                 playCurrentIndexWithDelay()
@@ -284,6 +322,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         maxIndex = detailedScript.size.coerceAtLeast(simplifiedScript.size)
         currentIndex = 0
         lastCheckpointRepeatedIndex = -1
+        lastSpokenIndex = -1
         _currentLocation.value = location
     }
 
@@ -333,11 +372,11 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
     private fun currentScript(): List<ScriptLine> =
         if (_isDetailed.value) detailedScript else simplifiedScript
 
-    /** Checkpoint target check (§7.1): key-fact line if the script has markers, else any line. */
+    /** Checkpoint target check (§7.1): only key-fact lines marked with '*' repeat once before advancing. */
     private fun isCheckpointLine(index: Int): Boolean {
         val script = currentScript()
         if (index !in script.indices) return false
-        return if (script.any { it.isKeyFact }) script[index].isKeyFact else true
+        return script[index].isKeyFact
     }
 
     private fun speakCurrentLineAsCheckpoint() {
@@ -486,13 +525,18 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
      * Broadcasts cognitive load state to all registered presentation modalities
      * and coordinates playback state transitions (e.g. overload pause / recap).
      */
-    fun updateContext(level: String, isSpeaking: Boolean = false) {
+    fun updateContext(level: String, isSpeaking: Boolean = false, fromManual: Boolean = false) {
+        lastIsSpeaking = isSpeaking
+        if (!fromManual) {
+            lastAutoLoadLevel = level
+        }
+        val effectiveLevel = if (_isManualLoadMode.value) _manualLoadLevel.value else level
         val previousLevel = currentLoadLevel
-        currentLoadLevel = level
-        _loadLevel.value = level
+        currentLoadLevel = effectiveLevel
+        _loadLevel.value = effectiveLevel
 
         val loadState = CognitiveLoadState(
-            loadLevel = level,
+            loadLevel = effectiveLevel,
             previousLevel = previousLevel,
             isSpeaking = isSpeaking,
             isAutoMode = _isAutoMode.value,
@@ -508,7 +552,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
 
             if (_presentationMode.value == PresentationMode.MULTIMODAL) {
                 // Legacy v1 visual tier (§7.6)
-                when (level) {
+                when (effectiveLevel) {
                     "Low", "Waiting..." -> _isLargeImageMode.value = false
                     "Medium", "High" -> _isLargeImageMode.value = true
                     "Overload" -> _isLargeImageMode.value = true
@@ -517,15 +561,20 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
                 _isLargeImageMode.value = false
             }
 
-            // Overload transition (§7.1): remember that WE paused
+            // Overload transition (§7.1): pause immediately and remember that WE paused
             // playback so recovery can auto-resume with a recap.
-            if (level == "Overload" && previousLevel != "Overload" && _isPlaying.value) {
+            if (effectiveLevel == "Overload" && previousLevel != "Overload" && _isPlaying.value) {
                 pausedByOverload = true
+                delayJob?.cancel()
+                delayJob = null
+                auditoryModality.stop()
+                currentUtteranceId = null
+                _isPlaying.value = false
             }
 
             // Recovery: resume automatically; in audio modes lead with a one-line recap
             // because there is no visual cue showing where the tour resumed.
-            if (previousLevel == "Overload" && level != "Overload" && level != "Waiting..." &&
+            if (previousLevel == "Overload" && effectiveLevel != "Overload" && effectiveLevel != "Waiting..." &&
                 !_isPlaying.value && pausedByOverload
             ) {
                 pausedByOverload = false
@@ -612,6 +661,7 @@ class TourManager(private val context: Context, private val ttsManager: TTSManag
         if (currentIndex < script.size) {
             val line = script[currentIndex]
             lastSpokenText = line.text
+            lastSpokenIndex = currentIndex
 
             val nonUtterances = _history.value.filter { !it.isUtterance }
             val utterances = script.take(currentIndex + 1).map {
