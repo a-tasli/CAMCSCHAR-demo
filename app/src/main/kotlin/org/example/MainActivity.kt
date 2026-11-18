@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
 
         sensorManager = GaitSensorManager(this, analyzer)
         bleManager = BleHeartRateManager(this)
-        voiceManager = VoiceSensorManager()
+        voiceManager = VoiceSensorManager(this)
         locationSensorManager = LocationSensorManager(this)
         ttsManager = TTSManager(this)
         tourManager = TourManager(this, ttsManager)

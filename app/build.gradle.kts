@@ -17,6 +17,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ONNX Runtime native libs: real devices are arm, desktop emulators are
+        // x86_64. Legacy 32-bit x86 is dropped to keep ~20 MB out of the APK.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -44,6 +50,7 @@ android {
 
 dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
     implementation("androidx.compose.material:material-icons-extended")
     
     implementation(libs.androidx.core.ktx)

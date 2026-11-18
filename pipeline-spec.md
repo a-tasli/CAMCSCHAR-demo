@@ -28,8 +28,8 @@ eyes-free UI) or `AUDIO_ONLY` (no in-tour UI). Details in §7.
 
 ```
  Decathlon BLE armband          Phone step detector        Phone microphone
- (BLE Heart Rate Service)       (TYPE_STEP_DETECTOR)       (AudioRecord 8 kHz)
-        │                              │                          │
+ (BLE Heart Rate Service)       (TYPE_STEP_DETECTOR)       (AudioRecord 16 kHz
+        │                              │                    + Silero VAD onnx)
         ▼                              ▼                          ▼
  BleHeartRateManager            GaitSensorManager          VoiceSensorManager
   • HR (bpm)                     • step timestamps (ns)     • isSpeaking (debounced)
@@ -115,16 +115,17 @@ notifications). Rejected intervals do not enter the window.
 
 ### 3.4 Voice activity (`VoiceSensorManager`)
 
-Runs a dedicated thread reading 8 kHz mono PCM in 1024-sample (~128 ms) chunks:
+Runs a dedicated thread reading 16 kHz mono PCM in 512-sample (32 ms) chunks:
 
-1. **Volume floor:** chunk RMS must exceed **400** (16-bit scale) — discards ambient
-   background and distant conversations.
-2. **Spectral dominance:** in-place Cooley–Tukey FFT; energy is summed in the human
-   voice band (**300–3000 Hz**) vs. the rest of the spectrum. Chunk is classified as
-   speech iff `voiceEnergy > 1.5 × noiseEnergy` (rejects broad-spectrum noise like wind).
-3. **Debounce:** speech is declared iff **≥ 3 of the last 10 chunks** (~1.2 s window)
-   were speech.
-4. **Hangover:** `isSpeaking` stays true for **3 s** after the last detected speech
+1. **Silero VAD:** each chunk is scored by **Silero VAD** (16 kHz ONNX export
+   with explicit state, ~1.2 MB, MIT) via ONNX Runtime. A chunk counts as speech
+   iff speech probability > **0.5**. The trained model is robust to wind,
+   traffic, footsteps and other broad-spectrum noise that the legacy band-ratio
+   heuristic misclassified as speech; it replaces the old volume-floor +
+   FFT heuristic, which is kept only as a fallback if the model fails to load.
+2. **Debounce:** speech is declared iff **≥ 5 of the last 25 chunks** (~0.8 s
+   window, i.e. ≥ 0.16 s of speech) were speech.
+3. **Hangover:** `isSpeaking` stays true for **3 s** after the last detected speech
    (`isCooldown` flag is exposed during the hangover).
 
 Output: boolean `isSpeaking` — used as a load modifier (TTS audio ducking is disabled).
