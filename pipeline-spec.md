@@ -16,7 +16,7 @@ level drives the adaptive tour, and how everything is logged for the visualizer.
 
 The system estimates a participant's cognitive load in real time while they walk a
 campus tour, and adapts a **hands-free audio tour** (speech rate, inter-line pausing,
-script density, checkpoint repetition) to that estimate. Load is
+script density, and overload pause/recap) to that estimate. Load is
 computed every **1 second** from three scored channels — **gait**, **cardiac (HR)**,
 and a **voice-activity modifier** — plus passive streams (GPS, audio) used for logging
 and presentation.
@@ -288,17 +288,16 @@ The load level maps to an **`AudioTourParams`** object applied on every tick:
 | `speed` | float | TTS playback rate; applied live mid-utterance via the `TTSManager` `AudioTrack` path (no restart/queue-flush) |
 | `pauseMs` | long | silence inserted between script lines |
 | `density` | enum | `DETAILED` / `SIMPLIFIED` script selection |
-| `checkpoint` | bool | re-speak the previous (key) line once before advancing |
 | `recapOnResume` | bool | on playback resume, re-speak the last completed line before continuing |
 | `ducking` | bool | drop TTS volume while `isSpeaking` (disabled in this codebase) |
 
 ### 7.1 Audio adaptation matrix (auto mode / dynamic condition)
 
-| Level | speed | pauseMs | density | checkpoint | ducking |
+| Level | speed | pauseMs | density | Overload / Recovery | ducking |
 |---|---|---|---|---|---|
-| Low / Waiting | 1.0× | 300 ms | detailed | no | disabled |
-| Medium | 0.85× | 1500 ms | detailed | no | disabled |
-| High | 0.75× | 2000 ms | simplified | **yes** | disabled |
+| Low / Waiting | 1.0× | 300 ms | detailed | — | disabled |
+| Medium | 0.85× | 1500 ms | detailed | — | disabled |
+| High | 0.75× | 2000 ms | simplified | — | disabled |
 | Overload | — (playback paused) | — | — | recap on resume | disabled |
 
 Differences vs. v1 and their rationale:
@@ -307,9 +306,8 @@ Differences vs. v1 and their rationale:
   `isLargeImageMode`; with visuals gone, Medium gets its own audio profile — slower
   rate and longer inter-line gaps give processing time (the auditory analog of reducing
   visual clutter). Script density stays detailed until High.
-- **High gains checkpoint repetition:** after a (key) line is spoken, it is repeated
-  once before the tour advances. With no transcript to glance back at, repetition is
-  the audio channel's only repair mechanism, so it is reserved for High.
+- **High switches to simplified script density** at 0.75× speed with 2.0-second gaps to
+  ease processing load under heavy cognitive and physical demand.
 - **Low inserts a short natural pause (300 ms)** instead of v1's 0 ms — avoids
   line-concatenation artifacts; also applies to the static control so conditions stay
   symmetric.
@@ -342,11 +340,6 @@ In `MULTIMODAL` the visual UI carries these cues, so earcons are audio-mode-only
 
 ### 7.4 Content conventions
 
-- Key-fact lines in both script variants are marked with a leading `*` in the
-  `scripts/*.txt` files; the parser strips the marker (`ScriptLine.isKeyFact`). Checkpoints
-  repeat a line once before advancing only when it **is** a key-fact line (`ScriptLine.isKeyFact`).
-  Unmarked lines are spoken once without checkpoint repetition so general narration
-  is not repeated.
 - Inline-image references become **spoken scene descriptions** (the narration
   describes what the participant is looking at); the `MULTIMODAL` parser keeps the
   current image format. Also pending content re-authoring.
@@ -354,7 +347,7 @@ In `MULTIMODAL` the visual UI carries these cues, so earcons are audio-mode-only
 ### 7.5 Static mode (control condition)
 
 Unchanged semantics: fixed at the Low configuration (1.0×, detailed script, no
-checkpoints, no recap), **no ducking, no adaptation**; GPS geofencing still triggers
+recap), **no ducking, no adaptation**; GPS geofencing still triggers
 POI content.
 
 ### 7.6 Legacy v1 behaviour (implemented; retained under `MULTIMODAL`)
@@ -394,7 +387,7 @@ on every state change.
 | `is_auto_mode`, `is_detailed_script`, `is_large_image_mode` | tour state (`is_large_image_mode` non-trivial only under `MULTIMODAL`) |
 | `tts_speed` | active playback rate (×) *(new, v2)* |
 | `inter_line_delay_ms` | pause inserted between script lines *(new, v2)* |
-| `is_checkpoint_active` | checkpoint repetition on (High) *(new, v2)* |
+| `is_checkpoint_active` | checkpoint repetition flag (legacy / unused) *(new, v2)* |
 | `presentation_mode` | `multimodal` \| `audio_first` \| `audio_only` *(new, v2)* |
 | `lat`, `lon` | GPS |
 | `trigger` | `event` \| `periodic` |
@@ -448,7 +441,7 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
 | Level thresholds | 50 / 100 | Low/Medium/High boundaries |
 | `AudioTourParams.AUDIO_LOW` (§7.1) | 1.0× / 300 ms | audio-mode Low pins (also the static control's pause) |
 | `AudioTourParams.AUDIO_MEDIUM` (§7.1) | 0.85× / 1500 ms | audio-mode Medium pins |
-| `AudioTourParams.AUDIO_HIGH` (§7.1) | 0.75× / 2000 ms / simplified | audio-mode High pins (checkpoint on) |
+| `AudioTourParams.AUDIO_HIGH` (§7.1) | 0.75× / 2000 ms / simplified | audio-mode High pins |
 | Legacy MULTIMODAL pins (§7.6) | 1.0×·0 / 0.75×·1500 / 0.75×·1500 ms | v1 speed·delay per level |
 | POI-arrival earcon lead-in | 900 ms | chime plays just before the first POI line (§7.2) |
 | Voice duck level | 100 % (disabled) | TTS volume while `isSpeaking` (ducking disabled) |

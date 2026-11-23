@@ -14,7 +14,7 @@
 
 ### 1.1 Context
 
-The CAMCSCHAR system delivers a hands-free, location-triggered cultural-heritage audio tour. In its v2 `AUDIO_FIRST` architecture, all adaptive behavior operates through the auditory channel—speech rate, inter-line pauses, script density, key-fact checkpoint repetition, and overload pause-with-recap—removing cross-modal visual adaptation from the experiment.
+The CAMCSCHAR system delivers a hands-free, location-triggered cultural-heritage audio tour. In its v2 `AUDIO_FIRST` architecture, all adaptive behavior operates through the auditory channel—speech rate, inter-line pauses, script density, and overload pause-with-recap—removing cross-modal visual adaptation from the experiment.
 
 The walking route spans three campus Points of Interest (POIs) arranged along an upward gradient of physical and cognitive demand. Locations do not map rigidly one-to-one onto discrete cognitive-load states. Instead, task demands trend upward as the tour progresses, while individual differences in walking pace, cardiovascular response, and dual-task performance determine when and how long each participant occupies `Low`, `Medium`, `High`, or `Overload` states.
 
@@ -94,59 +94,15 @@ A single standardized hardware kit (or identical phone models with identical OS 
 
 ### 2.4 Experimental Conditions
 
-Both conditions use identical GPS geofence triggers, POI arrival earcons (900 ms lead-in), closing earcons, and `AUDIO_FIRST` presentation. All 12 Core quiz facts appear in both `DETAILED` and `SIMPLIFIED` scripts and are marked with a leading `*` (`ScriptLine.isKeyFact`) so checkpoint repetition targets tested core content.
+Both conditions use identical GPS geofence triggers, POI arrival earcons (900 ms lead-in), closing earcons, and `AUDIO_FIRST` presentation. All 12 Core quiz facts appear in both `DETAILED` and `SIMPLIFIED` scripts so tested core content is preserved across density switches.
 
-| Condition / Load State | TTS Speed | Inter-Line Pause | Script Density | Key-Fact Checkpoint (`*`) | Overload Behavior |
-| --- | --- | --- | --- | --- | --- |
-| Static (Control) | 1.0×
-
- | 300 ms
-
- | Detailed
-
- | Off
-
- | None
-
- |
-| Auto — Low / Waiting | 1.0×
-
- | 300 ms
-
- | Detailed
-
- | Off
-
- | None
-
- |
-| Auto — Medium | 0.85×
-
- | 1500 ms
-
- | Detailed
-
- | Off
-
- | None
-
- |
-| Auto — High | 0.75×
-
- | 2000 ms
-
- | Simplified
-
- | On (repeats `*` line once)
-
- | None
-
- |
-| Auto — Overload | Paused
-
- | — | — | — | Pause + earcon; 1-line recap on resume
-
- |
+| Condition / Load State | TTS Speed | Inter-Line Pause | Script Density | Overload Behavior |
+| --- | --- | --- | --- | --- |
+| Static (Control) | 1.0× | 300 ms | Detailed | None |
+| Auto — Low / Waiting | 1.0× | 300 ms | Detailed | None |
+| Auto — Medium | 0.85× | 1500 ms | Detailed | None |
+| Auto — High | 0.75× | 2000 ms | Simplified | None |
+| Auto — Overload | Paused | — | — | Pause + earcon; 1-line recap on resume |
 
 ---
 
@@ -203,7 +159,7 @@ Both conditions use identical GPS geofence triggers, POI arrival earcons (900 ms
 
 
 * **Task Rationale:** Paced Serial 3s imposes sustained working-memory and vocal interference without causing total articulatory suppression (which rapid Serial 7s risks, creating retention floor effects across both groups). The researcher logs total responses and arithmetic accuracy (%) to check for dual-task shedding.
-* **Expected Profile:** Irregular footing, elevation gain, and aloud counting drive concurrent increases in gait variability, `%HRR` strain, and voice activity. Load trends toward `High` (triggering Simplified script density, 0.75× speed, 2000 ms pauses, and `*` key-fact checkpoint repetition in Auto Mode) and transient `Overload` episodes when peak locomotor/cardiac demand and speech coincide (pausing playback with an overload earcon and resuming with a one-line recap once load recovers). Static Mode continues unadapted throughout.
+* **Expected Profile:** Irregular footing, elevation gain, and aloud counting drive concurrent increases in gait variability, `%HRR` strain, and voice activity. Load trends toward `High` (triggering Simplified script density, 0.75× speed, and 2000 ms pauses in Auto Mode) and transient `Overload` episodes when peak locomotor/cardiac demand and speech coincide (pausing playback with an overload earcon and resuming with a one-line recap once load recovers). Static Mode continues unadapted throughout.
 
 
 * **End-of-Segment Check:** Verbal **Paas 9-point Mental Effort Rating**.
@@ -289,7 +245,7 @@ Samples are logged every 1 s (`periodic`) and on every state change (`event`) in
 * **Physiological and locomotor:** `hr`, `hrv_rmssd` (diagnostic only), `physical_strain_score`, `mental_hr_bpm`, `step_variance`, `is_speaking`.
 
 
-* **System and adaptation state:** `combined_load_index`, `load_level`, `is_auto_mode`, `is_detailed_script`, `is_large_image_mode`, `tts_speed`, `inter_line_delay_ms`, `is_checkpoint_active`, `presentation_mode`, `poi`, `script_line`.
+* **System and adaptation state:** `combined_load_index`, `load_level`, `is_auto_mode`, `is_detailed_script`, `is_large_image_mode`, `tts_speed`, `inter_line_delay_ms`, `presentation_mode`, `poi`, `script_line`.
 
 
 * **Spatial and logging metadata:** `timestamp`, `lat`, `lon`, `trigger`.
@@ -340,7 +296,7 @@ followed by Holm-adjusted planned contrasts comparing Auto vs. Static within eac
 ## 6. Validity Controls and Limitations
 
 * **Fixed POI order and recency:** Primary conclusions rely on within-segment Auto vs. Static contrasts where order, content, and recall delay are identical; fixed route progression is documented as a study limitation.
-* **Core vs. Detailed fact separation:** Separating Core items (12, invariant across script variants and tagged `*`) from Detailed items (6, trade-off metric) prevents penalizing Auto Mode for omitted peripheral text.
+* **Core vs. Detailed fact separation:** Separating Core items (12, invariant across script variants) from Detailed items (6, trade-off metric) prevents penalizing Auto Mode for omitted peripheral text.
 
 
 * **Frozen pipeline thresholds:** Because `AUDIO_FIRST` thresholds are inherited from multimodal tuning and the cardiac model is conservative, raw indices may run lower and `Overload` episodes may occur sparsely; actual tier occupancy and exploratory dose–response exposure are logged and reported transparently.
