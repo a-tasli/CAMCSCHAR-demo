@@ -192,33 +192,11 @@ Upon completion of the final script, `tourFinishedEvent` flushes telemetry and p
 
 The 20-item quiz separates invariant core facts, detailed trade-off items, and attention checks:
 
-| Segment | Core Items (Primary DV, 12 total)
-
- | Detailed Items (Trade-Off DV, 6 total)
-
- | Attention Traps (2 total)
-
- |
+| Segment | Core Items (Primary DV, 12 total) | Detailed Items (Trade-Off DV, 6 total) | Attention Traps (2 total) |
 | --- | --- | --- | --- |
-| 1. Amphitheatre | Q1–Q4: Construction year (2003), area (5,300 m²), capacity (4,000), unified graduation ceremony
-
- | Q5–Q6: Anatolian open-air inspiration, skateboarding events
-
- | — |
-| 2. Lake Memorial | Q7–Q10: Former gravel pit, rainwater/wastewater refill, seagulls bringing fish eggs, Class Brick ceremony
-
- | Q12–Q13: Clay/gravel watertight lining, flowing water vs. solid brick metaphor
-
- | Q11: Direct instruction check
-
- |
-| 3. Tosun Terzioğlu Garden | Q14–Q17: >170,000 campus plants, rector memorizing Latin tree names, Komatsu Sakura donation (2007–2009), ~2,000 trees / 7 species
-
- | Q19–Q20: Sakura Stone Monument origin (Gujyo, Japan), calligrapher (Toshitaka Hagiwara)
-
- | Q18: Direct instruction check
-
- |
+| 1. Amphitheatre | Q1–Q4: Construction year (2003), area (5,300 m²), capacity (4,000), unified graduation ceremony | Q5–Q6: Anatolian open-air inspiration, skateboarding events | — |
+| 2. Lake Memorial | Q7–Q10: Former gravel pit, rainwater/wastewater refill, seagulls bringing fish eggs, Class Brick ceremony | Q12–Q13: Clay/gravel watertight lining, flowing water vs. solid brick metaphor | Q11: Direct instruction check |
+| 3. Tosun Terzioğlu Garden | Q14–Q17: >170,000 campus plants, rector memorizing Latin tree names, Komatsu Sakura donation (2007–2009), ~2,000 trees / 7 species | Q19–Q20: Sakura Stone Monument origin (Gujyo, Japan), calligrapher (Toshitaka Hagiwara) | Q18: Direct instruction check |
 
 **Derived quiz metrics:**
 
