@@ -99,11 +99,10 @@ class AuditoryModality(
                     paused = true
                 )
             } else {
-                base.copy(duckWhileSpeaking = false, recapOnResume = state.isAudioMode)
+                base.copy(recapOnResume = state.isAudioMode)
             }
             _currentParams.value = params
 
-            ttsManager?.setDucking(false)
             ttsManager?.setSpeed(params.speed)
 
             // Overload transition attention earcon
@@ -117,7 +116,6 @@ class AuditoryModality(
             val staticParams = staticBase.copy(recapOnResume = state.isAudioMode)
             _currentParams.value = staticParams
 
-            ttsManager?.setDucking(false)
             ttsManager?.setSpeed(staticParams.speed)
         }
     }

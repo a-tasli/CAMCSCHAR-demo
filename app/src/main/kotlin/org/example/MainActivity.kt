@@ -257,16 +257,18 @@ fun MainAppScreen(
     }
 
     val rrIntervals by bleManager.rrIntervals.collectAsState()
+    val calibrationState by analyzer.calibrationState.collectAsState()
+    val bleHeartRate by bleManager.heartRate.collectAsState()
+    val bleConnectionState by bleManager.connectionState.collectAsState()
+    val isSpeakingNow by voiceManager.isSpeaking.collectAsState()
+    val speechDutyNow by voiceManager.speechDutyCycle10s.collectAsState()
+
     var features by remember { mutableStateOf<GaitFeatures?>(null) }
     var stepIntervals by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var pilotRunTag by remember { mutableStateOf("study") }
 
     LaunchedEffect(rrIntervals) {
         analyzer.addRRIntervals(rrIntervals)
-    }
-
-    val ttsSpeaking by ttsManager.isSpeakingOut.collectAsState()
-    LaunchedEffect(ttsSpeaking) {
-        voiceManager.setTtsActive(ttsSpeaking)
     }
 
     // Steady 1 Hz ticker loop: reading latest state without restarting on speech toggle
@@ -275,6 +277,7 @@ fun MainAppScreen(
             try {
                 val currentHr = bleManager.heartRate.value
                 val speaking = voiceManager.isSpeaking.value
+                val speechDuty10s = voiceManager.speechDutyCycle10s.value
                 val curLat = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLat.value else locationSensorManager.location.value?.latitude
                 val curLon = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLon.value else locationSensorManager.location.value?.longitude
 
@@ -282,11 +285,11 @@ fun MainAppScreen(
                     noiseDbfs = voiceManager.ambientNoiseDbfs.value,
                     noisePeakDbfs = voiceManager.ambientNoisePeakDbfs.value,
                     midbandRatio = voiceManager.ambientMidbandRatio.value,
-                    speechDuty10s = voiceManager.speechDutyCycle10s.value
+                    speechDuty10s = speechDuty10s
                 )
                 val ambientSnapshot = ambientScanManager.snapshot.value
 
-                val computedFeatures = analyzer.analyze(currentHr, speaking)
+                val computedFeatures = analyzer.analyze(currentHr, speaking, speechDuty10s)
                 val effectiveLevel = if (tourManager.isManualLoadMode.value) {
                     tourManager.manualLoadLevel.value
                 } else {
@@ -317,7 +320,19 @@ fun MainAppScreen(
                     interLineDelayMs = tourManager.audioParams.value.pauseMs,
                     isCheckpointActive = tourManager.audioParams.value.checkpoint,
                     presentationMode = tourManager.presentationMode.value.name.lowercase(),
-                    ambientContext = ambientSnapshot
+                    ambientContext = ambientSnapshot,
+                    hrrFraction = computedFeatures?.hrrFraction ?: 0.0,
+                    stepTimeMs = computedFeatures?.stepTime ?: 0.0,
+                    cadenceSpm = computedFeatures?.cadence ?: 0.0,
+                    isWalking = computedFeatures?.isWalking ?: false,
+                    stepCvPct = computedFeatures?.stepCvPercent ?: 0.0,
+                    gaitZScore = computedFeatures?.gaitZScore ?: 0.0,
+                    voiceZScore = computedFeatures?.voiceZScore ?: 0.0,
+                    strainReserveBonus = computedFeatures?.strainReserveBonus ?: 0.0,
+                    cusumScore = computedFeatures?.cusumScore ?: 0.0,
+                    baselineCalibrated = computedFeatures?.baselineCalibrated ?: false,
+                    baselineStepCvPct = computedFeatures?.baselineStepCvPct ?: 1.5,
+                    pilotRunTag = pilotRunTag
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -333,6 +348,7 @@ fun MainAppScreen(
             dataManager = dataManager,
             onSurveySubmitted = {
                 showSurvey = false
+                analyzer.resetSession()
                 tourManager.resetAppState()
                 dataManager.resetState()
             },
@@ -362,14 +378,29 @@ fun MainAppScreen(
             }
 
             when (selectedTabIndex) {
-                0 -> TourScreen(
-                    tourManager = tourManager,
-                    location = location,
-                    isManualGpsMode = isManualGpsMode,
-                    manualLat = manualLat,
-                    manualLon = manualLon,
-                    onOpenSurvey = { showSurvey = true }
-                )
+                0 -> {
+                    if (!calibrationState.isReadyForTour) {
+                        CalibrationScreen(
+                            calibrationState = calibrationState,
+                            features = features,
+                            hrValue = bleHeartRate,
+                            bleState = bleConnectionState,
+                            restingHrBpm = analyzer.currentRestingHr,
+                            isSpeaking = isSpeakingNow,
+                            onStartCalibration = { analyzer.startCalibration() },
+                            onResetCalibration = { analyzer.resetCalibration() }
+                        )
+                    } else {
+                        TourScreen(
+                            tourManager = tourManager,
+                            location = location,
+                            isManualGpsMode = isManualGpsMode,
+                            manualLat = manualLat,
+                            manualLon = manualLon,
+                            onOpenSurvey = { showSurvey = true }
+                        )
+                    }
+                }
                 1 -> GaitApp(
                     features = features,
                     stepIntervals = stepIntervals,
@@ -384,6 +415,10 @@ fun MainAppScreen(
                     manualLon = manualLon,
                     location = location,
                     serverUrl = serverUrl,
+                    calibrationState = calibrationState,
+                    speechDuty10s = speechDutyNow,
+                    pilotRunTag = pilotRunTag,
+                    onPilotRunTagChange = { pilotRunTag = it },
                     onServerUrlChange = {
                         serverUrl = it
                         sharedPreferences.edit().putString("server_url", it).apply()

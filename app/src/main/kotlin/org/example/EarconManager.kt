@@ -8,9 +8,8 @@ import android.media.SoundPool
  * Short earcons for the audio-first tour (pipeline-spec.md §7.2). Only played in
  * AUDIO_FIRST / AUDIO_ONLY — in MULTIMODAL the visual UI carries these cues.
  *
- * Sounds are routed through the same usage as the TTS narration
- * (USAGE_ASSISTANCE_NAVIGATION_GUIDANCE / CONTENT_TYPE_SONIFICATION) so they follow the
- * same volume stream and ducking path as the tour voice.
+ * Sounds are routed through the same headphone/earphone usage as the tour voice
+ * (USAGE_ASSISTANCE_NAVIGATION_GUIDANCE / CONTENT_TYPE_SONIFICATION).
  */
 class EarconManager(context: Context) {
 

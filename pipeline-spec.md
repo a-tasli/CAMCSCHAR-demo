@@ -1,53 +1,54 @@
 # CAMCSCHAR Demo — Real-Time Cognitive Load Pipeline Specification
 
-**Status:** Implemented — **audio-first pivot v2**. Sensing/scoring/fusion pipeline
-(§3–§6) and the audio adaptation layer (§7) are implemented; §7.6 documents the legacy
-v1 behaviour kept under `MULTIMODAL`.
-**Last updated:** 2026-11-06
-**Scope:** Android app (`app/src/main/kotlin/org/example/`) and data schema consumed by `visualizer/`.
+**Status:** Implemented — **audio-first pivot v2 + frozen per-subject statistical/EWMA pipeline**.
+**Last updated:** 2026-11-27
+**Scope:** Android app (`app/src/main/kotlin/org/example/`), offline calibration tooling (`tools/`), and data schema consumed by `visualizer/`.
 
-This document describes the complete real-time pipeline: how raw sensor streams are
-acquired, filtered, scored, fused into a combined cognitive-load index and level, how the
-level drives the adaptive tour, and how everything is logged for the visualizer.
+This document describes the complete real-time pipeline: manual pre-tour baseline
+calibration, how raw sensor streams are acquired, normalized, smoothed via a bounded
+stationary EWMA controller, how the load level drives the headphone-only adaptive tour,
+and how telemetry is logged for the visualizer and pilot calibration audit.
 
 ---
 
 ## 1. Overview
 
 The system estimates a participant's cognitive load in real time while they walk a
-campus tour, and adapts a **hands-free audio tour** (speech rate, inter-line pausing,
-script density, and overload pause/recap) to that estimate. Load is
-computed every **1 second** from three scored channels — **gait**, **cardiac (HR)**,
-and a **voice-activity modifier** — plus passive streams (GPS, audio) used for logging
-and presentation.
+campus tour, and adapts a **hands-free headphone audio tour** (speech rate, inter-line
+pausing, script density, and overload pause/recap) to that estimate. Load is
+computed every **1 second** from three normalized components inside `StatisticalLoadModel` —
+**within-subject gait Step-Time CV departure**, **sustained Silero VAD vocal duty cycle**,
+and an **ACSM Moderate-to-Vigorous `%HRR` capacity-reserve hinge** — plus logged-only
+diagnostics (`mental_hr_bpm`, HRV, ambient RF/acoustic, GPS). See `design-choices.md`
+for literature justifications and citations.
 
-**Audio-first pivot (v2):** the sensing/fusion pipeline is fully modality-agnostic and
-therefore unchanged; all adaptation weight moves into the audio channel behind a
+**Audio-first pivot (v2, headphone/earphone-only):** audio playback exclusively targets
+headphones/earphones (loudspeaker mode and ducking are out of scope) behind a
 `PresentationMode` flag — `MULTIMODAL` (legacy v1 visuals), `AUDIO_FIRST` (minimal
-eyes-free UI) or `AUDIO_ONLY` (no in-tour UI). Details in §7.
+eyes-free UI) or `AUDIO_ONLY` (no in-tour UI). Before the tour screen (`Start Tour`)
+unlocks, `CalibrationScreen` enforces a manual 60-second quiet-walking baseline capture
+(`BaselineCalibrator`). Details in §4–§7.
 
 ```
- Decathlon BLE armband          Phone step detector        Phone microphone
+ Decathlon BLE armband          Phone step detector        Headphone inline mic
  (BLE Heart Rate Service)       (TYPE_STEP_DETECTOR)       (AudioRecord 16 kHz
         │                              │                    + Silero VAD onnx)
         ▼                              ▼                          ▼
  BleHeartRateManager            GaitSensorManager          VoiceSensorManager
   • HR (bpm)                     • step timestamps (ns)     • isSpeaking (debounced)
-  • RR intervals (1/1024 s)      │                          │
-    → converted to ms            │                          │
-    → artifact filter            │                          │
-        │                        ▼                          │
-        └──────────────►  GaitAnalyzer.analyze(hr, isSpeaking)   ◄───────┘
-                              called every 1 s (MainActivity loop)
+  • RR intervals (1/1024 s)      • Step-Time CV (%)         • speechDutyCycle10s
+        │                              │                          │
+        └──────────► GaitAnalyzer.analyze(hr, isSpeaking, duty) ◄─────────┘
+                      + BaselineCalibrator (60s Median/MAD lock)
                                    │
-                     ┌─────────────┼──────────────────┐
-                     ▼             ▼                  ▼
-               Gait channel  Cardiac channel   Voice modifier
-              (gaitLoadIndex) (hrLoadIndex)     (level bump)
-                     └─────────────┼──────────────────┘
+                     ┌─────────────┼───────────────────────┐
+                     ▼             ▼                       ▼
+              zGait (CV)     zVoice (VAD duty)    ACSM >=40% HRR hinge
+                     └─────────────┼───────────────────────┘
                                    ▼
-                    combinedLoadIndex → loadLevel
-                    (Low / Medium / High / Overload)
+                   Stationary Cognitive EWMA + 5s Dwell Hysteresis
+                   → combinedLoadIndex & loadLevel (Low..Overload)
+                     (mental_hr_bpm + RMSSD logged-only)
                                    │
               ┌────────────────────┼─────────────────────┐
               ▼                    ▼                     ▼
@@ -55,11 +56,10 @@ eyes-free UI) or `AUDIO_ONLY` (no in-tour UI). Details in §7.
        (adaptive tour)       (JSON logging)          (synced charts)
 ```
 
-Key change vs. the previous design: **HRV (SDNN/RMSSD) is no longer used for scoring.**
-Forearm-PPG RMSSD from the armband sits at the sensor noise floor (~3–10 ms) while
-moving, so the HRV terms were replaced by a **physical-strain score** (Karvonen %HRR)
-plus a **motion-corrected mental-HR residual** with transition gating. RMSSD/SDNN are
-still computed and logged for comparison.
+Key evolution vs. earlier heuristics:
+- **HRV (SDNN/RMSSD)** remains logged-only (motion PPG sits at the ~3–10 ms noise floor).
+- **Cadence-corrected `mental_hr_bpm`** (with stop-only recovery and asymmetric kinetics) is also **logged-only** rather than feeding the live EWMA filter, due to incline/cadence bias on campus stairs (`design-choices.md §5`).
+- Raw population gait cutoffs (`500 ms` / `20 ms`) and instant `+1` speech bumps are replaced by per-participant **Median + MAD Step-Time CV** normalization, **sustained 10 s VAD duty cycle**, and a structurally bounded **`40–60% HRR`** reserve hinge.
 
 ---
 
@@ -128,7 +128,7 @@ Runs a dedicated thread reading 16 kHz mono PCM in 512-sample (32 ms) chunks:
 3. **Hangover:** `isSpeaking` stays true for **3 s** after the last detected speech
    (`isCooldown` flag is exposed during the hangover).
 
-Output: boolean `isSpeaking` — used as a load modifier (TTS audio ducking is disabled). Non-speech chunks (`speechProb <= 0.5`) also feed `AcousticFrameAnalyzer` in volatile RAM to publish `ambientNoiseDbfs`, `ambientNoisePeakDbfs`, and `ambientMidbandRatio` (300–3000 Hz power fraction), alongside rolling 10 s `speechDutyCycle10s`. `VoiceSensorManager.setTtsActive()` currently gates chunk classification while `TTSManager.isSpeakingOut` is active.
+Output: boolean `isSpeaking` and rolling 10 s `speechDutyCycle10s` — running continuously across headphone/earphone sessions with zero loudspeaker TTS suppression or ducking. Non-speech chunks (`speechProb <= 0.5`) also feed `AcousticFrameAnalyzer` in volatile RAM to publish `ambientNoiseDbfs`, `ambientNoisePeakDbfs`, and `ambientMidbandRatio` (300–3000 Hz power fraction).
 
 ### 3.5 Location (`LocationSensorManager`)
 
@@ -142,132 +142,97 @@ GPS fixes are logged and drawn on the map; **not used in scoring**.
 
 ---
 
-## 4. Gait channel → `gaitLoadIndex`
+## 4. Gait channel & Pre-Tour Baseline Calibration (`BaselineCalibrator`)
 
-From the step-timestamp buffer:
+From the 20-step nanosecond buffer (automatically resetting stale buffers upon starting a new step after `≥ 4.0 s` idle):
 
-- **Walking state:** `isWalking = (time since last step < 5 s) AND (≥ 2 steps seen)`.
-- Step intervals are gated to **300–1200 ms** (rejects detection glitches; the tight
-  upper bound keeps standing/pacing from counting as walking).
-- `avgStepTime` = mean of accepted intervals; `stepTimeVar` = standard deviation (ms).
+- **Walking state:** `isWalking = (time since last step < 4.0 s) AND (≥ 2 steps seen)`.
+- **Active stepping freshness:** `isActivelyStepping = isWalking AND (time since last step ≤ 1.5 s)` — while waiting out seconds `1.5–4.0` during a halt, gait departure holds neutral (`0.0`) instead of holding stale braking tails.
+- Step intervals are gated to **300–1200 ms**, then filtered by a relative-median inlier band (**`0.65×median .. 1.45×median`**) whenever `≥ 4` intervals are present so 1–2 slow deceleration steps or missed beats do not spike SD.
+- **Coefficient of Variation:** `stepCvPct = (stepTimeVar / avgStepTime) × 100` (while `isActivelyStepping` with `≥ 2` inlier intervals).
+
+Before the tour screen unlocks, `CalibrationScreen` requires pressing **"Begin Calibration (60 s Walk)"** to collect `baselineTargetTicks = 60` calm silent walking ticks (`isActivelyStepping && !isSpeaking`), freezing each participant's baseline using outlier-robust statistics:
 
 ```
-gaitStepTimeScore = (avgStepTime − 500) / 200 × 100     // slower steps → higher
-gaitVarScore      = (stepTimeVar − 20)  / 50  × 100     // more erratic → higher
-gaitLoadIndex     = (gaitStepTimeScore + gaitVarScore) / 2
+cv0      = median(stepCvSamples)
+sigmaCv0 = max(1.4826 × median(|cv − cv0|), 0.40 %)   // variance floor 0.40 %
 ```
 
-- **Stop rule:** if `!isWalking`, `gaitLoadIndex` is pinned to **25** ("Low") —
-  standing still must not read as gait disturbance.
-- Range notes: 500 ms step time (120 steps/min) scores 0 on the step-time term;
-  20 ms variability scores 0 on the variability term. `null` if < 3 steps seen.
+While uncalibrated (or under Debug bypass), healthy young-adult norms apply (`stepTime = 500 ms`, `cv0 = 1.5 %`, `sigmaCv0 = 0.5 %`). Standardized cognitive-motor departure is capped strictly below `High (4.0)`:
+
+```
+zGait = clamp((stepCvPct − cv0) / sigmaCv0, 0, 3.0)   // 0.0 when stopped / idle > 1.5 s
+```
 
 ---
 
-## 5. Cardiac channel → `hrLoadIndex` *(new)*
+## 5. Cardiac channel (`%HRR` Reserve + Logged-Only Mental Residual)
 
-All timing-dependent state advances by `dt` every tick, even when HR is missing, so the
-dynamics stay continuous across BLE dropouts. `hrLoadIndex` is `null` only if no HR has
-ever been received.
+All timing-dependent state advances by `dt` every tick, even when HR is missing.
 
-### 5.1 Adaptive resting HR (`restingHr`)
+### 5.1 Adaptive resting HR (`restingHr`) and smoothing
 
-```
-if hr < restingHr:  restingHr += (hr − restingHr) × 0.15      // snaps down fast
-else:               restingHr += (hr − restingHr) × 0.001     // near-frozen upward
-```
+`restingHr` adapts asymmetrically (`α_drop = 0.15`, `α_rise = 0.001` from seed `70.0`), and `hrSmoothed` applies an EMA with **τ = 15 s** (`α = 1 − e^(−dt/τ)`).
 
-Self-calibrating: any still moment (e.g. seated consent/instructions before the tour)
-pulls the estimate to the participant's true resting HR. No manual baseline required.
+### 5.2 Cadence and ACSM Physical Capacity Reserve (`strainReserveBonus`)
 
-### 5.2 HR smoothing
-
-`hrSmoothed` is an EMA of the reported HR with time constant **τ = 15 s**
-(`α = 1 − e^(−dt/τ)`), suppressing tick-to-tick PPG noise.
-
-### 5.3 Cadence
-
-`cadence = 60000 / avgStepTime` steps/min while `isWalking`, else **0**. Derived from
-the existing step buffer — no additional sensor.
-
-### 5.4 Physical strain score (Karvonen %HRR)
+`cadence = 60000 / avgStepTime` steps/min while `isWalking`, else **0**. Aerobic strain uses Tanaka et al. (2001) `HRmax = 208 − 0.7 × age` and Karvonen `%HRR`:
 
 ```
-HRmax      = 208 − 0.7 × age          // Tanaka et al. (2001); age defaults to 25
-hrr        = (hrSmoothed − restingHr) / (HRmax − restingHr)
-strainScore= clamp(hrr / 0.50 × 100, 0, 100)      // 50 %HRR == 100 points
+hrrFraction = (hrSmoothed − restingHr) / max(HRmax − restingHr, 1.0)
+strainScore = clamp(hrrFraction / 0.50 × 100, 0, 100)      // logged 0–100 diagnostic
 ```
 
-This is the established occupational-physiology measure of aerobic workload; it now
-explicitly labels the HR channel's dominant component as *physical* strain.
-
-### 5.5 Motion-corrected mental residual
-
-The part of HR that locomotion cannot explain is treated as the candidate cognitive
-signal:
+For live cognitive-load reserve adjustment, `%HRR` applies an **ACSM Moderate (40%) → Vigorous (60%) piecewise hinge** structurally capped below `threshMedium (2.0)`:
 
 ```
-hrTarget  = restingHr + a × cadence            // a = walkingHrCoefficient (default 0.30 bpm per step/min)
-hrPred   += (hrTarget − hrPred) × min(dt/45 s, 1)   // one-pole cardiac kinetics, τ = 45 s
-mentalHr  = hrSmoothed − hrPred                 // bpm, can be negative
+strainReserveBonus = clamp((hrrFraction − 0.40) / 0.20, 0, 1.0) × 1.50
 ```
 
-The **kinetics model** is essential: real HR follows activity changes with a ~30–60 s
-lag. Matching that lag in the prediction prevents pace transitions from leaking into
-the residual as fake load (over-prediction on movement onset, under-prediction — a
-spurious spike — after stopping).
+Light/moderate walking (`≤ 40% HRR`) contributes **0.0**; steep stairs alone (`≥ 60% HRR`) add at most `+1.50σ` (preserving `< Medium` unless concurrent gait or vocal departure occurs).
 
-**Transition gating (recovery window).** The residual is only interpretable in steady
-state, and HR recovery after stopping is slower than cadence decay. Whenever
+### 5.3 Exploratory mental HR residual (`mental_hr_bpm` — logged only)
 
 ```
-|cadence − cadence_prev| > 15 steps/min   OR   isWalking changed
+hrTarget = restingHr + 0.30 × cadence
+tau      = (hrTarget > hrPredicted) ? 20 s : 40 s          // fast vagal onset vs slower recovery
+hrPredicted += (hrTarget − hrPredicted) × (1 − e^(−dt/tau))
+mentalHr = hrSmoothed − hrPredicted
 ```
 
-a **60 s recovery window** starts, during which the mental channel is muted, then ramps
-back in over the final **15 s**:
-
-```
-mentalWeight = clamp((15 − recoveryTimer) / 15, 0, 1)
-mentalScore  = clamp(mentalHr / 8 bpm, 0, 1) × 100 × mentalWeight
-```
-
-The 8 bpm full scale reflects the literature effect size for mental load on HR above
-physical baseline (~3–8 bpm). Negative residuals clamp to zero — an over-predicting
-`a` degrades gracefully to a silent mental channel.
-
-### 5.6 Cardiac fusion
-
-```
-hrLoadIndex = (strainScore + mentalScore) / 2      // null if no HR received yet
-```
-
-The channel is therefore ~5/6 physical (strain 1/4 of combined, HR-mean semantics) and
-~1/12 cognitive by construction — consistent with the measured dominance of physical
-load on HR (Makowiec-Dąbrowska et al. 1992) and the reliability limits found for
-wearable HR during movement (Mach et al. 2022).
+When transitioning walking → stopped (`lastIsWalking && !isWalking`), a **20 s recovery timer** (with `10 s` ramp-in on resuming) mutes the logged `mentalHrScore` to absorb the abrupt post-walk HR tail without resetting on continuous cobblestone pace shifts. **`mental_hr_bpm` is logged only and excluded from §6 EWMA scoring** due to incline/cadence bias on stairs (`design-choices.md §5`).
 
 ---
 
-## 6. Fusion → combined index and level
+## 6. Fusion → Stationary EWMA & Hysteresis (`InnovationCusumController`)
+
+Cognitive channels carry equal unit weights (`1.0×`), with per-channel ceilings ensuring neither gait (`max 3.0`) nor voice (`max 2.5`) alone reaches `High` or `Overload`:
 
 ```
-combinedLoadIndex = (gaitLoadIndex + hrLoadIndex) / 2        // both present
-                    = gaitLoadIndex ?: hrLoadIndex           // single-channel fallback
-                    = null                                   // neither available → "Waiting..."
+vocalDuty = speechDutyCycle10s (or 0.50 if omitted & isSpeaking)
+zVoice    = clamp((vocalDuty − 0.10) / 0.25, 0, 2.5)       // rejects <10% transient noise; continuous speech saturates at Medium
+zCog      = zGait + zVoice
 ```
 
-Level thresholds on the combined index:
+A stationary first-order **EWMA control filter** (`τ_ewma = 6.0 s`) tracks current steady-state load level without winding up indefinitely over time, and adds the bounded `%HRR` reserve boost:
 
-| Range | Level |
-|---|---|
-| < 50 | Low |
-| 50–100 | Medium |
-| ≥ 100 | High |
+```
+alpha = 1 − e^(−dt / 6.0)
+E_t   = E_{t−1} + alpha × (zCog − E_{t−1})
+effectiveEvidence = E_t + strainReserveBonus
+combinedLoadIndex = effectiveEvidence × 25.0                // 50 / 100 / 137.5+ scale parity
+```
 
-**Voice modifier:** if `isSpeaking`, the level is bumped one tier (Low→Medium,
-Medium→High, High→Overload). Rationale: talking while processing tour content is an
-extra attentional demand. No bump in "Waiting...".
+Level thresholds (`Waiting...` before first HR, ≥ 2 walking intervals, or sustained speech):
+
+| Effective Evidence (`effectiveEvidence`) | `combinedLoadIndex` | Level |
+|---|---|---|
+| `< 2.0` | `< 50` | Low |
+| `2.0 – 4.0` | `50 – 100` | Medium |
+| `4.0 – 5.5` | `100 – 137.5` | High |
+| `≥ 5.5` | `≥ 137.5` | Overload |
+
+Upward transitions apply on threshold crossing; **downward transitions require `minDownDwellTicks = 5 s`** of sustained lower evidence before stepping down, eliminating boundary flicker.
 
 ---
 
@@ -295,16 +260,15 @@ The load level maps to an **`AudioTourParams`** object applied on every tick:
 | `pauseMs` | long | silence inserted between script lines |
 | `density` | enum | `DETAILED` / `SIMPLIFIED` script selection |
 | `recapOnResume` | bool | on playback resume, re-speak the last completed line before continuing |
-| `ducking` | bool | drop TTS volume while `isSpeaking` (disabled in this codebase) |
 
 ### 7.1 Audio adaptation matrix (auto mode / dynamic condition)
 
-| Level | speed | pauseMs | density | Overload / Recovery | ducking |
-|---|---|---|---|---|---|
-| Low / Waiting | 1.0× | 300 ms | detailed | — | disabled |
-| Medium | 0.85× | 1500 ms | detailed | — | disabled |
-| High | 0.75× | 2000 ms | simplified | — | disabled |
-| Overload | — (playback paused) | — | — | recap on resume | disabled |
+| Level | speed | pauseMs | density | Overload / Recovery |
+|---|---|---|---|---|
+| Low / Waiting | 1.0× | 300 ms | detailed | — |
+| Medium | 0.85× | 1500 ms | detailed | — |
+| High | 0.75× | 2000 ms | simplified | — |
+| Overload | — (playback paused) | — | — | recap on resume |
 
 Differences vs. v1 and their rationale:
 
@@ -353,8 +317,7 @@ In `MULTIMODAL` the visual UI carries these cues, so earcons are audio-mode-only
 ### 7.5 Static mode (control condition)
 
 Unchanged semantics: fixed at the Low configuration (1.0×, detailed script, no
-recap), **no ducking, no adaptation**; GPS geofencing still triggers
-POI content.
+recap), **no adaptation**; GPS geofencing still triggers POI content.
 
 ### 7.6 Legacy v1 behaviour (implemented; retained under `MULTIMODAL`)
 
@@ -384,10 +347,22 @@ on every state change.
 | `hr` | armband HR (bpm), `null` before first contact |
 | `hrv_rmssd` | RMSSD of the filtered RR window (ms) — **logged, not scored** |
 | `step_variance` | `stepTimeVar` (ms) |
-| `mental_hr_bpm` | motion-corrected residual (bpm, pre-clamp) *(new)* |
-| `physical_strain_score` | Karvonen strain score (0–100) *(new)* |
-| `combined_load_index` | fused index (0–100+) |
-| `load_level` | final level incl. voice bump |
+| `step_time_ms` | mean accepted step interval (ms) |
+| `cadence_spm` | step cadence (steps/min while `isWalking`) |
+| `is_walking` | walking activity gate (`true` / `false`) |
+| `step_cv_pct` | within-window step-time Coefficient of Variation (`%`) |
+| `hrr_fraction` | un-clamped Karvonen `%HRR` fraction |
+| `gait_z_score` | bounded within-subject gait CV departure (`0–3.0σ`) |
+| `voice_z_score` | bounded sustained 10 s VAD duty departure (`0–2.5σ`) |
+| `strain_reserve_bonus` | ACSM `40–60% HRR` reserve boost (`0.0–1.5σ`) |
+| `cusum_score` | smoothed stationary cognitive EWMA statistic (`E_t`, JSON key preserved) |
+| `baseline_calibrated` | `true` once 60 s manual walking baseline locks |
+| `baseline_step_cv_pct` | frozen baseline `cv0` (`%`) |
+| `pilot_run_tag` | `study` \| `pilot_terrain_only` \| `pilot_terrain_distractors` |
+| `mental_hr_bpm` | stop-gated cadence residual (bpm, **logged only**) |
+| `physical_strain_score` | Karvonen strain diagnostic (0–100) |
+| `combined_load_index` | `(E_t + strain_reserve_bonus) × 25.0` |
+| `load_level` | hysteresis-filtered state (`Low`–`Overload`) |
 | `poi`, `script_line` | tour position |
 | `is_speaking` | voice channel output |
 | `is_auto_mode`, `is_detailed_script`, `is_large_image_mode` | tour state (`is_large_image_mode` non-trivial only under `MULTIMODAL`) |
@@ -435,97 +410,54 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
 | Constant | Value | Meaning |
 |---|---|---|
 | `HR_SMOOTH_TAU_SEC` | 15 | EMA τ on measured HR |
-| `HR_RESPONSE_TAU_SEC` | 45 | cardiac lag to activity (kinetics model) |
+| `HR_ONSET_TAU_SEC` / `HR_RECOVERY_TAU_SEC` | 20 / 40 | asymmetric vagal onset vs parasympathetic decay lag |
 | `RESTING_HR_DROP_ALPHA` | 0.15 | resting-HR downward adaptation per tick |
 | `RESTING_HR_RISE_ALPHA` | 0.001 | resting-HR upward drift per tick |
-| `RECOVERY_WINDOW_SEC` | 60 | mental-channel mute after pace transitions |
-| `MENTAL_RAMP_SEC` | 15 | ramp-in of mental channel at window end |
-| `CADENCE_TRANSITION_STEPS_PER_MIN` | 15 | cadence jump that starts a recovery window |
-| `STRAIN_FULL_SCALE_HRR` | 0.50 | %HRR mapped to 100 strain points |
-| `MENTAL_HR_FULL_SCALE_BPM` | 8.0 | residual bpm mapped to 100 mental points |
-| `walkingHrCoefficient` (a) | 0.30 | predicted HR rise per step/min of cadence |
+| `RECOVERY_WINDOW_SEC` | 20 | logged-only `mentalHr` mute triggered on walk→stop transition |
+| `MENTAL_RAMP_SEC` | 10 | ramp-in of logged `mentalHr` on walking resume |
+| `baselineTargetTicks` | 60 | manual pre-tour calm walking baseline ticks (`CalibrationScreen`) |
+| Normative `cv0` / `sigmaCv0` / floor | 1.5% / 0.5% / 0.4% | healthy young-adult warm-start CV & minimum dispersion |
+| `stopTimeoutSec` / `stepFreshnessSec` | 4.0 s / 1.5 s | stop window and active step freshness gate |
+| `stepOutlierLowRatio` / `HighRatio` | 0.65 / 1.45 | relative-median inlier filter against braking/missed beats |
+| `voiceDutyDeadzone` / `voiceDutyScale` | 0.10 / 0.25 | 10 s Silero VAD duty-cycle z-score parameters |
+| `hrrDeadzone` / `hrrFullScale` / cap | 0.40 / 0.60 / 1.50 | ACSM Moderate→Vigorous `%HRR` reserve hinge & strict cap |
+| `zGaitMax` / `zVoiceMax` | 3.0 / 2.5 | single-channel ceilings (prevents single-channel `High`/`Overload`) |
+| `ewmaTauSec` | 6.0 s | stationary cognitive EWMA filter time constant |
+| Level thresholds (`Med / High / Ovl`) | 2.0 / 4.0 / 5.5 (50 / 100 / 137.5) | `effectiveEvidence` boundaries (×25 on `combinedLoadIndex`) |
+| `minDownDwellTicks` | 5 | consecutive lower-tier ticks required before stepping down |
+| `walkingHrCoefficient` (a) | 0.30 | predicted HR rise per step/min (logged-only residual) |
 | `restingHrSeed` | 70.0 | initial resting HR (self-corrects) |
 | `participantAge` | 25 | for Tanaka HRmax (208 − 0.7·age) |
-| Gait: step-time term | (−500)/200 | 500 ms step time = 0 points |
-| Gait: variability term | (−20)/50 | 20 ms variability = 0 points |
-| Stop rule | 25 | gait score while not walking |
-| Level thresholds | 50 / 100 | Low/Medium/High boundaries |
 | `AudioTourParams.AUDIO_LOW` (§7.1) | 1.0× / 300 ms | audio-mode Low pins (also the static control's pause) |
 | `AudioTourParams.AUDIO_MEDIUM` (§7.1) | 0.85× / 1500 ms | audio-mode Medium pins |
 | `AudioTourParams.AUDIO_HIGH` (§7.1) | 0.75× / 2000 ms / simplified | audio-mode High pins |
 | Legacy MULTIMODAL pins (§7.6) | 1.0×·0 / 0.75×·1500 / 0.75×·1500 ms | v1 speed·delay per level |
 | POI-arrival earcon lead-in | 900 ms | chime plays just before the first POI line (§7.2) |
-| Voice duck level | 100 % (disabled) | TTS volume while `isSpeaking` (ducking disabled) |
 
 ---
 
-## 11. What the experiment requires (and doesn't)
+## 11. What the experiment requires (and freezes)
 
-**Required: nothing new.** The model runs out of the box with defaults.
-
-**Strongly recommended (zero instrumentation):**
-1. Keep the participant **seated and quiet for 2–3 minutes** before the tour starts
-   (consent/instructions window) so `restingHr` converges to the true resting floor.
-2. **Note the participant's age** — currently only affects HRmax via the default; for a
-   20–30 y cohort the effect on strain is ±3 %, so this is optional precision.
-3. **Fix the TTS engine and voice** across all experimental devices (or use a single
-   device for every participant). Android TTS voices differ per manufacturer, and in
-   the audio-first pipeline the voice is the *only* output channel — voice variance is
-   now a validity threat.
-
-**Post-hoc tuning (from the first session's logs, in the visualizer):**
-- If `mental_hr_bpm` is pinned at ≤ 0 while standing at POIs → lower
-  `walkingHrCoefficient` (try 0.2). If it spikes during *steady* walking → raise it.
-- If the tour never reaches "High" → lower `STRAIN_FULL_SCALE_HRR` (0.50 → 0.35), since
-  the new channel is deliberately more conservative than the old HRV formula.
-- **After switching presentation mode** (multimodal → audio-first/audio-only), expect
-  the index to run lower: removing the visual channel removes a constant attentional
-  demand. Retune the §6 level thresholds per mode, and never compare raw indices
-  across modes.
+1. Keep the participant **seated and quiet for 2–3 minutes** before starting the walk
+   so `restingHr` stabilizes.
+2. Complete the mandatory **manual 60-second quiet walk calibration** on `CalibrationScreen`
+   before the `TourScreen` (`Start Tour`) unlocks.
+3. **Fix the headphone kit and Android TTS engine/voice** across all sessions.
+4. Before launching the `N = 30` cohort, audit bounded anti-chatter constants on the
+   `2 × 5` researcher pilot split (`2 Terrain-Only`, `3 Terrain + Distractors`) using
+   `tools/analyze_pilot_calibration.py`, then **freeze the APK identically across all 30 participants**.
 
 ---
 
 ## 12. Rationale and references
 
-- **Positive HRV–load sign (historical):** Solhjoo et al. 2019, *Sci Rep* 9:14668
-  (`heartrate.pdf`) — intrinsic cognitive load correlated *positively* with SDNN/RMSSD
-  (r ≈ 0.71–0.90); mean HR correlated negatively with performance. The HRV terms were
-  removed for signal-quality reasons, not because of this paper's direction.
-- **PPG HRV noise floor while moving:** wrist/forearm PPG RMSSD is reliable at rest but
-  collapses under motion artifacts (observed 3–10 ms on this armband vs. normative
-  resting RMSSD ≈ 19–75 ms, Nunan et al. 2010 meta-analysis).
-- **Physical vs. mental HR attribution:** Makowiec-Dąbrowska et al. 1992 (physical
-  workload dominates HR under combined load); Mach et al. 2022, *Applied Ergonomics*
-  (wearable HR detects mental workload reliably only at low physical activity).
-- **%HRR as physical strain:** Karvonen 1957; HRmax from Tanaka et al. 2001.
-- **Wristband cognitive-load features (HR, RR, temp, EDA):** Borisov et al. 2021,
-  *Computers in Human Behavior Reports* (`wristband.pdf`), CogLoad@UbiComp 2020.
-- **Audio-first pivot rationale:** location-triggered audio is the de-facto consumer
-  format for cultural-heritage tours (handheld audio guides; GPS-triggered walking
-  tours such as VoiceMap / izi.TRAVEL). A single-modality audio output removes the
-  cross-modal confound from the adaptation experiment and matches the eyes-free /
-  accessibility expectations of the sector. Cognitive-load-adaptive *pacing* of
-  narration is the novel contribution the pivot foregrounds.
+See `design-choices.md` for full literature rationales (`Tanaka et al. 2001`, Karvonen `%HRR` & ACSM intensity zones, Lambourne & Tomporowski 2010 exercise-cognition meta-regression, Michael Myrtek's Additional Heart Rate & its documented incline limitation, Mach et al. 2022, Makowiec-Dąbrowska et al. 1992, Nunan et al. 2010, and healthy young-adult dual-task gait CV norms).
 
 ## 13. Known limitations
 
-1. **The mental residual is a slow, small signal** (a few bpm, τ ≈ 30 s+) — usable as a
-   trend indicator during POI stops, not an event detector.
-2. **PPG HR error while walking** (±3–5 bpm in validation literature) feeds both the
-   strain and residual channels; the residual partly cancels common motion-driven HR
-   error, but extreme cases will leak.
-3. **RMSSD remains unusable while moving** on this armband; it may become usable at
-   rest — check post-filter rest values in the visualizer before re-weighting it.
-4. **Level thresholds were tuned for the old channel scales** — expect the index to run
-   lower now; retune `STRAIN_FULL_SCALE_HRR` if needed (§11).
-5. **No single-channel trust metric:** if the armband disconnects, the system silently
-   falls back to gait-only scoring ("Waiting..." only before any HR arrives).
-6. **Audio-mode thresholds are inherited from multimodal tuning** (§11): baseline load
-   runs lower without a visual channel; index values are not comparable across
-   presentation modes until thresholds are retuned per mode.
-7. **Device-dependent TTS voices** (§11): cross-participant comparison requires a fixed
-   engine/voice, otherwise the narration content itself differs between participants.
-8. **TTS microphone gating during wired-headset dual tasks:** `MainActivity` currently pipes
-   `TTSManager.isSpeakingOut` into `VoiceSensorManager.setTtsActive()`, which suppresses
-   `isSpeaking` while TTS audio plays (designed for loudspeaker mode; should be bypassed or
-   speaker-routed before running wired-headset sessions where participants speak during playback).
+1. **Logged-only `mental_hr_bpm` slope bias on inclines:** Cadence alone under-predicts exertion on stairs (`Segment 3`); `mental_hr_bpm` is therefore excluded from live adaptation and analyzed post-hoc on flat segments (`Segment 2`).
+2. **PPG HR error while walking** (±3–5 bpm in validation literature) feeds diagnostic strain and residual logging.
+3. **RMSSD remains unusable while moving** on this forearm PPG armband; retained for rest checks only.
+4. **Silent cognitive load without motor or vocal signatures:** Load tasks producing neither gait CV instability, sustained speech, nor `> 40% HRR` reserve strain will not escalate the controller (addressed in `scenario.md` via paced vocal/dual-task segments).
+5. **Headphone-only audio scope:** Loudspeaker mode is unsupported; Silero VAD runs continuously so speech over wired headphones triggers during active TTS playback.
+6. **Device-dependent TTS voices** (§11): cross-participant comparison requires fixing a single hardware kit and TTS voice.

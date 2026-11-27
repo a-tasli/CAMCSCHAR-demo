@@ -185,9 +185,6 @@ class VoiceSensorManager(private val context: Context) {
     private var isRecording = false
     private var recordingThread: Thread? = null
 
-    @Volatile
-    private var isTtsActive = false
-
     // --- Silero VAD (ONNX Runtime) ---
     private var ortEnvironment: OrtEnvironment? = null
     private var ortSession: OrtSession? = null
@@ -213,10 +210,6 @@ class VoiceSensorManager(private val context: Context) {
 
     private val _speechDutyCycle10s = MutableStateFlow(0f)
     val speechDutyCycle10s: StateFlow<Float> = _speechDutyCycle10s.asStateFlow()
-
-    fun setTtsActive(active: Boolean) {
-        isTtsActive = active
-    }
 
     private val sampleRate = 16000
 
@@ -345,28 +338,25 @@ class VoiceSensorManager(private val context: Context) {
             val readSize = audioRecord?.read(buffer, 0, chunkSamples) ?: 0
             if (readSize > 0) {
                 val nowMs = System.currentTimeMillis()
-                val ttsPlaying = isTtsActive
                 val metrics = AcousticFrameAnalyzer.computeMetrics(buffer, readSize, sampleRate, chunkSamples)
-                val isSpeech = if (ttsPlaying) false else analyzeChunk(buffer, readSize, floatChunk, metrics)
+                val isSpeech = analyzeChunk(buffer, readSize, floatChunk, metrics)
 
                 speechHistory[historyIndex] = isSpeech
                 historyIndex = (historyIndex + 1) % historySize
 
-                // Rolling 10 s speech duty cycle (frozen during own TTS playback)
-                if (!ttsPlaying) {
-                    if (dutyFilled < DUTY_WINDOW_CHUNKS) {
-                        dutyFilled++
-                    } else if (dutyHistory[dutyIndex]) {
-                        dutySpeechCount--
-                    }
-                    dutyHistory[dutyIndex] = isSpeech
-                    if (isSpeech) dutySpeechCount++
-                    dutyIndex = (dutyIndex + 1) % DUTY_WINDOW_CHUNKS
-                    _speechDutyCycle10s.value = dutySpeechCount.toFloat() / dutyFilled.toFloat()
+                // Rolling 10 s speech duty cycle (continuous headphone-only VAD)
+                if (dutyFilled < DUTY_WINDOW_CHUNKS) {
+                    dutyFilled++
+                } else if (dutyHistory[dutyIndex]) {
+                    dutySpeechCount--
                 }
+                dutyHistory[dutyIndex] = isSpeech
+                if (isSpeech) dutySpeechCount++
+                dutyIndex = (dutyIndex + 1) % DUTY_WINDOW_CHUNKS
+                _speechDutyCycle10s.value = dutySpeechCount.toFloat() / dutyFilled.toFloat()
 
                 // Non-speech ambient acoustic floor (RAM-only scalars, discarded PCM)
-                if (!ttsPlaying && !isSpeech) {
+                if (!isSpeech) {
                     emaDbfs = emaDbfs?.let { it + AMBIENT_EMA_ALPHA * (metrics.dbfs - it) } ?: metrics.dbfs
                     emaMidband = emaMidband?.let { it + AMBIENT_EMA_ALPHA * (metrics.midbandRatio - it) } ?: metrics.midbandRatio
                     _ambientNoiseDbfs.value = emaDbfs

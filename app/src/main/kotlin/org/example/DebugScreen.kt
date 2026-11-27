@@ -33,6 +33,10 @@ fun GaitApp(
     manualLon: Double? = null,
     location: android.location.Location? = null,
     serverUrl: String = "",
+    calibrationState: BaselineSnapshot = analyzer.calibrationState.value,
+    speechDuty10s: Float = 0f,
+    pilotRunTag: String = "study",
+    onPilotRunTagChange: (String) -> Unit = {},
     onServerUrlChange: (String) -> Unit = {},
     onUploadClicked: () -> Unit = {},
     onSaveToDownloadsClicked: () -> Unit = {},
@@ -449,13 +453,127 @@ fun GaitApp(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
-                        isCooldown -> "Waiting 3s... (+1 Level)"
-                        isSpeaking -> "Speech Detected (+1 Level)"
-                        else -> "Quiet"
+                        isCooldown -> "Cooldown (10s duty: ${String.format(Locale.US, "%.0f%%", speechDuty10s * 100f)})"
+                        isSpeaking -> "Speech Active (10s duty: ${String.format(Locale.US, "%.0f%%", speechDuty10s * 100f)})"
+                        else -> "Quiet (10s duty: ${String.format(Locale.US, "%.0f%%", speechDuty10s * 100f)})"
                     },
                     fontSize = 14.sp,
                     color = if (isSpeaking) Color.DarkGray else Color.Gray
                 )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Statistical Baseline Calibration & CUSUM Diagnostics
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Statistical Calibration & CUSUM",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color(0xFF4A148C)
+                    )
+                    val calLabel = when (calibrationState.phase) {
+                        CalibrationPhase.IDLE -> "Idle (Waiting for Tour Calibration)"
+                        CalibrationPhase.CALIBRATING -> "Calibrating (${calibrationState.collectedTicks}/${calibrationState.targetTicks} s)"
+                        CalibrationPhase.LOCKED -> String.format(
+                            Locale.US,
+                            "Locked (CV₀=%.2f%% ± %.2f%%)",
+                            calibrationState.stepCvPct,
+                            calibrationState.sigmaStepCvPct
+                        )
+                        CalibrationPhase.NORMATIVE_BYPASS -> String.format(
+                            Locale.US,
+                            "Normative Bypass (CV₀=%.2f%% ± %.2f%%)",
+                            calibrationState.stepCvPct,
+                            calibrationState.sigmaStepCvPct
+                        )
+                    }
+                    ParameterRow("Baseline State", calLabel)
+                    ParameterRow(
+                        "EWMA Score / Reserve",
+                        String.format(
+                            Locale.US,
+                            "%.2f / +%.2fσ",
+                            features?.cusumScore ?: 0.0,
+                            features?.strainReserveBonus ?: 0.0
+                        )
+                    )
+                    ParameterRow(
+                        "Departures (z_gait / z_voice)",
+                        String.format(
+                            Locale.US,
+                            "%.2fσ / %.2fσ",
+                            features?.gaitZScore ?: 0.0,
+                            features?.voiceZScore ?: 0.0
+                        )
+                    )
+                    ParameterRow(
+                        "Logged Diagnostics (%HRR / MentalHR)",
+                        String.format(
+                            Locale.US,
+                            "%.0f%% / %+.1f bpm",
+                            (features?.physicalStrainScore ?: 0.0) * 0.5,
+                            features?.mentalHrBpm ?: 0.0
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { analyzer.resetCalibration() },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Reset Calibration", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { analyzer.bypassCalibrationWithNorms() },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Bypass (Use Norms)", fontSize = 11.sp)
+                        }
+                    }
+
+                    Text("Session Telemetry Tag", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            "study" to "Study",
+                            "pilot_terrain_only" to "Pilot: Terrain",
+                            "pilot_terrain_distractors" to "Pilot: Distract"
+                        ).forEach { (tag, label) ->
+                            val selected = pilotRunTag == tag
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onPilotRunTagChange(tag) },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (selected) Color(0xFF6A1B9A) else Color(0xFFE1BEE7)
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (selected) Color.White else Color(0xFF4A148C)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -485,7 +603,10 @@ fun GaitApp(
             )
 
             ParameterRow("Step Time", String.format(Locale.US, "%.0f ms", features?.stepTime ?: 0.0))
-            ParameterRow("Step Variability", String.format(Locale.US, "%.1f ms", features?.stepTimeVariability ?: 0.0))
+            ParameterRow(
+                "Step Variability / CV",
+                String.format(Locale.US, "%.1f ms (%.2f%%)", features?.stepTimeVariability ?: 0.0, features?.stepCvPercent ?: 0.0)
+            )
             ParameterRow("Location", location?.let { String.format(Locale.US, "%.5f, %.5f", it.latitude, it.longitude) } ?: "Waiting for GPS...")
 
             Spacer(modifier = Modifier.height(16.dp))

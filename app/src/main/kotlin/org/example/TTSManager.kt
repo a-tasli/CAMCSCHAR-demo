@@ -10,19 +10,14 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isInitialized = false
 
-    private var isDucked = false
     private var currentSpeed = 1.0f
-    private var currentVolume = 1.0f
 
     private val trackLock = Any()
     private var audioTrack: AudioTrack? = null
@@ -32,9 +27,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     private val _onUtteranceCompleted = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val onUtteranceCompleted: SharedFlow<String> = _onUtteranceCompleted.asSharedFlow()
-
-    private val _isSpeakingOut = MutableStateFlow(false)
-    val isSpeakingOut: StateFlow<Boolean> = _isSpeakingOut.asStateFlow()
 
     init {
         try {
@@ -61,11 +53,9 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                             try {
                                 track.setNotificationMarkerPosition(totalFramesWritten)
                             } catch (_: Exception) {
-                                _isSpeakingOut.value = false
                                 _onUtteranceCompleted.tryEmit(utteranceId)
                             }
                         } else {
-                            _isSpeakingOut.value = false
                             _onUtteranceCompleted.tryEmit(utteranceId)
                         }
                     }
@@ -75,7 +65,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                 override fun onError(utteranceId: String?) {
                     synchronized(trackLock) {
                         if (utteranceId == null || utteranceId == currentSynthesisId) {
-                            _isSpeakingOut.value = false
+                            currentSynthesisId = null
                         }
                     }
                 }
@@ -122,7 +112,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                                 override fun onMarkerReached(track: AudioTrack) {
                                     synchronized(trackLock) {
                                         if (track == audioTrack && currentSynthesisId == utteranceId) {
-                                            _isSpeakingOut.value = false
                                             _onUtteranceCompleted.tryEmit(utteranceId)
                                         }
                                     }
@@ -138,10 +127,9 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                                 e.printStackTrace()
                             }
 
-                            newTrack.setVolume(currentVolume)
+                            newTrack.setVolume(1.0f)
                             newTrack.play()
                             audioTrack = newTrack
-                            _isSpeakingOut.value = true
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -183,15 +171,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
-    fun setDucking(duck: Boolean) {
-        // Audio ducking is disabled in this codebase; volume remains at 1.0f
-        isDucked = false
-        currentVolume = 1.0f
-        synchronized(trackLock) {
-            audioTrack?.setVolume(1.0f)
-        }
-    }
-
     fun speak(text: String, utteranceId: String) {
         if (isInitialized) {
             synchronized(trackLock) {
@@ -214,7 +193,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     fun stop() {
         synchronized(trackLock) {
             currentSynthesisId = null
-            _isSpeakingOut.value = false
             try {
                 audioTrack?.stop()
                 audioTrack?.release()

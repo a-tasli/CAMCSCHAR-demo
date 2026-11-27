@@ -82,16 +82,16 @@ A single standardized hardware kit (or identical phone models with identical OS 
 * **Wired Headset:** A wired headset (open-acoustic or single-ear fit for ambient safety, preferably with an inline close-talk microphone) set to a comfortable volume before the walk. Wired delivery avoids Bluetooth HFP/SCO telephony profile switching when recording audio, prevents artifacts during live `PlaybackParams` rate changes, and reduces microphone pickup of the researcher's voice.
 
 
-* **BLE Heart Rate Armband:** Decathlon optical PPG armband worn on the non-dominant upper forearm, streaming standard Bluetooth Heart Rate Service (`0x180D`, characteristic `0x2A37`). At 1 Hz, the frozen pipeline computes EMA-smoothed HR ($\tau = 15\text{ s}$), self-calibrating `restingHr` ($\alpha_{\text{drop}} = 0.15$, $\alpha_{\text{rise}} = 0.001$, seeded at 70 bpm), Karvonen `%HRR` physical strain (`STRAIN_FULL_SCALE_HRR = 0.50`, Tanaka $HR_{\max} = 208 - 0.7 \times \text{age}$, default age 25), and a cadence-predicted mental HR residual (`a = 0.30`, $\tau = 45\text{ s}$, 60 s recovery mute and 15 s ramp-in after cadence changes $> 15\text{ steps/min}$ or walking-state changes, 8 bpm full scale). Artifact-filtered RR intervals (converted from $1/1024\text{ s}$ to ms, gated to 300–2000 ms and $\le 30\%$ successive difference) are logged for diagnostic RMSSD analysis only and excluded from scoring.
+* **BLE Heart Rate Armband:** Decathlon optical PPG armband worn on the non-dominant upper forearm, streaming standard Bluetooth Heart Rate Service (`0x180D`, characteristic `0x2A37`). At 1 Hz, the frozen pipeline computes EMA-smoothed HR ($\tau = 15\text{ s}$), self-calibrating `restingHr` ($\alpha_{\text{drop}} = 0.15$, $\alpha_{\text{rise}} = 0.001$, seeded at 70 bpm), Karvonen `%HRR` (Tanaka $HR_{\max} = 208 - 0.7 \times \text{age}$, default age 25) driving an **ACSM Moderate (`40%`) → Vigorous (`60%`) `%HRR` capacity-reserve hinge** capped at $+1.50\sigma$ (`< Medium` threshold so stairs alone never false-escalate), and logs diagnostic `physical_strain_score` and exploratory stop-gated `mental_hr_bpm` (asymmetric kinetics $\tau_{\text{onset}} = 20\text{ s}$, $\tau_{\text{recovery}} = 40\text{ s}$, 20 s mute / 10 s ramp triggered only on walking→stopped transitions; excluded from live adaptation). Artifact-filtered RR intervals are logged for diagnostic RMSSD only.
 
 
-* **Voice Activity Detection:** 16 kHz mono PCM audio sampled in 512-sample (32 ms) chunks and scored by Silero VAD (ONNX; speech probability $> 0.5$, $\ge 5$ of last 25 chunks debounce [~0.8 s], 3 s hangover). Voice activity bumps the load level up one tier; TTS ducking is disabled (100% volume).
+* **Voice Activity Detection (Always-On Headphone Scope):** 16 kHz mono PCM audio sampled in 512-sample (32 ms) chunks and scored continuously by Silero VAD (ONNX; speech probability $> 0.5$, $\ge 5$ of last 25 chunks debounce [~0.8 s], 3 s hangover; speaker-mode suppression and ducking removed). Instead of instant binary `+1` tier jumps, the controller scores sustained **10 s rolling speech duty cycle (`speech_duty_cycle_10s`)** above a 10% transient deadzone (`clamp((duty − 0.10) / 0.25, 0, 2.5)`), bounding speech-only contribution below `High` so prolonged calm conversation stays `Medium`.
 
 
-* **Step and Location Sensing:** Hardware `TYPE_STEP_DETECTOR` (rolling 20-step nanosecond buffer, valid intervals 300–1200 ms, stop rule pinning `gaitLoadIndex` to 25 after 5 s without steps) and GPS geofencing.
+* **Step, Calibration Baseline, and Location Sensing:** Hardware `TYPE_STEP_DETECTOR` (rolling 20-step nanosecond buffer, valid intervals 300–1200 ms, relative-median inlier filter `0.65×..1.45×` median, `4.0 s` stop timeout with `1.5 s` freshness neutral gate) computes Step-Time Coefficient of Variation (`step_cv_pct = SD / mean × 100`, capped at `3.0σ`) standardized against each participant's manual **60 s pre-tour calm-walking Median + scaled MAD baseline** (variance floor `0.40%`), fused alongside `z_voice` via a stationary **EWMA filter (`τ = 6.0 s`)**, `Medium/High/Overload = 2.0/4.0/5.5`, and `5 s` downward dwell hysteresis plus GPS geofencing.
 
 
-* **Ambient Context Covariates (Exploratory Logging Only):** Passively records aggregate BLE counts (86-filter Bluetooth SIG catalog), 100% SSID-blind Wi-Fi AP metrics (`adb shell settings put global wifi_scan_throttle_enabled 0` recommended on study phones), and non-speech microphone `dBFS` / spectral midband ratio. All MACs, BSSIDs, and audio chunks stay strictly inside volatile RAM (`EphemeralIdFilter`, 180 s max TTL); zero identifiers or audio are stored, and these covariates are excluded from cognitive-load scoring during this study. *(Note: before participant runs, verify `VoiceSensorManager.setTtsActive()` gating policy for wired-headset speech during active TTS.)*
+* **Ambient Context Covariates (Exploratory Logging Only):** Passively records aggregate BLE counts (86-filter Bluetooth SIG catalog), 100% SSID-blind Wi-Fi AP metrics (`adb shell settings put global wifi_scan_throttle_enabled 0` recommended on study phones), and non-speech microphone `dBFS` / spectral midband ratio. All MACs, BSSIDs, and audio chunks stay strictly inside volatile RAM (`EphemeralIdFilter`, 180 s max TTL); zero identifiers or audio are stored, and these covariates are excluded from cognitive-load scoring during this study.
 
 
 
@@ -119,7 +119,7 @@ Both conditions use identical GPS geofence triggers, POI arrival earcons (900 ms
 2. The researcher fits the BLE armband on the non-dominant forearm, connects the wired headset, plays a brief neutral TTS sample to set comfortable volume, and verifies live HR, step detection, and Silero VAD in the Debug tab.
 
 
-3. The participant sits quietly without speaking for **3 minutes** so `restingHr` and `hrSmoothed` converge to true physiological resting baseline. The researcher sets the assigned condition (`Static` or `Auto`), starts logging, locks the screen, and places the phone in the participant's pocket (or provided hip pouch).
+3. The participant sits quietly without speaking for **3 minutes** so `restingHr` and `hrSmoothed` converge to true physiological resting baseline, then presses **"Begin Calibration (60 s Walk)"** on the pre-tour `CalibrationScreen` and walks calmly and silently at a comfortable pace on smooth level pavement until the 60 s Median/MAD walking baseline locks (`TourScreen` then unlocks). The researcher sets the assigned condition (`Static` or `Auto`), starts logging, locks the screen, and places the phone in the participant's pocket (or provided hip pouch).
 
 
 4. The participant is instructed to walk naturally along the guided route, perform secondary tasks accurately without ignoring the audio guide, and **keep walking slowly within the POI zone accompanied by the researcher** if narration is still playing near the end of a path. Continuing to walk prevents premature geofence exit while avoiding the 5-second stationary stop rule (`!isWalking`), which would artificially drop gait load to 25 and mute the cardiac mental residual for 60 s.
@@ -223,10 +223,10 @@ The 20-item quiz separates invariant core facts, detailed trade-off items, and a
 
 Samples are logged every 1 s (`periodic`) and on every state change (`event`) into `experiment_<timestamp>.json`:
 
-* **Physiological and locomotor:** `hr`, `hrv_rmssd` (diagnostic only), `physical_strain_score`, `mental_hr_bpm`, `step_variance`, `is_speaking`.
+* **Physiological and locomotor:** `hr`, `hrv_rmssd` (diagnostic only), `hrr_fraction`, `physical_strain_score`, `mental_hr_bpm` (logged-only diagnostic), `step_time_ms`, `cadence_spm`, `is_walking`, `step_variance`, `step_cv_pct`, `is_speaking`, `speech_duty_cycle_10s`.
 
 
-* **System and adaptation state:** `combined_load_index`, `load_level`, `is_auto_mode`, `is_detailed_script`, `is_large_image_mode`, `tts_speed`, `inter_line_delay_ms`, `presentation_mode`, `poi`, `script_line`.
+* **Statistical controller & system state:** `gait_z_score`, `voice_z_score`, `strain_reserve_bonus`, `cusum_score`, `baseline_calibrated`, `baseline_step_cv_pct`, `pilot_run_tag`, `combined_load_index`, `load_level`, `is_auto_mode`, `is_detailed_script`, `is_large_image_mode`, `tts_speed`, `inter_line_delay_ms`, `presentation_mode`, `poi`, `script_line`.
 
 
 * **Spatial and logging metadata:** `timestamp`, `lat`, `lon`, `trigger`.
@@ -255,7 +255,7 @@ Applied identically across groups before unblinding:
 ### 5.2 Manipulation and Fidelity Checks (H5)
 
 * **Subjective effort gradient:** Friedman test (or one-way repeated-measures ANOVA if normal) on Paas ratings across Segments 1–3, with Holm-corrected post-hoc comparisons verifying Segment 1 < Segment 2 < Segment 3.
-* **Sensor and tier progression:** Repeated-measures comparisons across segments for `physical_strain_score`, `step_variance`, Silero VAD duty cycle (`% time is_speaking == true`), and percentage of active narration spent in `Low`, `Medium`, `High`, and `Overload`.
+* **Sensor and tier progression:** Repeated-measures comparisons across segments for `physical_strain_score`, `hrr_fraction`, `step_cv_pct` (and `gait_z_score`), Silero VAD duty cycle (`speech_duty_cycle_10s` and `% time is_speaking == true`), `cusum_score`, and percentage of active narration spent in `Low`, `Medium`, `High`, and `Overload`.
 * **Secondary-task equivalence:** Welch's $t$-test or Mann-Whitney $U$ comparing Segment 2 prompt completion and Segment 3 Serial 3s count/accuracy across groups to confirm neither group shed secondary-task effort.
 
 ### 5.3 Retention Analyses (H1 and H2)
@@ -283,12 +283,12 @@ followed by Holm-adjusted planned contrasts comparing Auto vs. Static within eac
 * **Core vs. Detailed fact separation:** Separating Core items (12, invariant across script variants) from Detailed items (6, trade-off metric) prevents penalizing Auto Mode for omitted peripheral text.
 
 
-* **Frozen pipeline thresholds:** Because `AUDIO_FIRST` thresholds are inherited from multimodal tuning and the cardiac model is conservative, raw indices may run lower and `Overload` episodes may occur sparsely; actual tier occupancy and exploratory dose–response exposure are logged and reported transparently.
+* **Frozen statistical controller & pilot calibration:** Before enrolling participants (`N = 30`), bounded anti-chatter constants (`ewma_tau_sec`, `voice_duty_scale`, `max_strain_reserve_bonus`, `min_down_dwell_ticks`) are audited using the offline `2 × 5` researcher Terrain-Only vs. Distractors ablation (`tools/analyze_pilot_calibration.py`) and then frozen identically across all 30 participants. No weights update online during the trial.
 
 
 * **Non-circular manipulation check:** Per-segment Paas ratings and logged secondary-task accuracy validate stressor intensity independently of `combined_load_index`.
-* **Narration overrun handling:** Having participants walk slowly within the POI zone if narration extends past the path ensures 100% script delivery without triggering the 5-second stationary stop rule; total playback duration per POI is logged as an adaptive mechanism.
+* **Narration overrun handling:** Having participants walk slowly within the POI zone if narration extends past the path ensures 100% script delivery without resetting stationary stop recovery; total playback duration per POI is logged transparently.
 
 
 * **Blinding and prior knowledge:** Single-blind participant handling, verbatim researcher cue cards, permuted block randomization, and the baseline campus-history knowledge covariate control allocation and expectancy bias.
-* **Hardware and sensor fidelity:** Pocket/hip-pouch screen-off carry, a wired headset, a fixed Android TTS voice, a 3-minute seated baseline, exclusion of noisy motion-PPG RMSSD from scoring, and BLE-dropout screening control measurement variance.
+* **Hardware and sensor fidelity:** Pocket/hip-pouch screen-off carry, a wired headset with continuous unsuppressed Silero VAD, a fixed Android TTS voice, a 3-minute seated baseline + manual 60 s calm-walk baseline lock (`CalibrationScreen`), exclusion of noisy motion-PPG RMSSD and hillside-confounded `mental_hr_bpm` from live triggering, and BLE-dropout screening control measurement variance.

@@ -61,7 +61,20 @@ class ExperimentDataManager(private val context: Context) {
         isCheckpointActive: Boolean,
         presentationMode: String,
         // v3 IRB-safe ambient covariates (aggregate scalars only, zero PII)
-        ambientContext: AmbientContextSnapshot? = null
+        ambientContext: AmbientContextSnapshot? = null,
+        // Statistical baseline-normalized + CUSUM telemetry (design-choices.md)
+        hrrFraction: Double = 0.0,
+        stepTimeMs: Double = 0.0,
+        cadenceSpm: Double = 0.0,
+        isWalking: Boolean = false,
+        stepCvPct: Double = 0.0,
+        gaitZScore: Double = 0.0,
+        voiceZScore: Double = 0.0,
+        strainReserveBonus: Double = 0.0,
+        cusumScore: Double = 0.0,
+        baselineCalibrated: Boolean = false,
+        baselineStepCvPct: Double = 1.5,
+        pilotRunTag: String = "study"
     ) = withContext(Dispatchers.IO) {
         if (!isRecording) return@withContext
 
@@ -71,6 +84,7 @@ class ExperimentDataManager(private val context: Context) {
         val stateHash = Objects.hash(
             poi, loadLevel, combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode,
             isSpeaking, scriptLine, ttsSpeed, interLineDelayMs, isCheckpointActive, presentationMode,
+            baselineCalibrated, pilotRunTag,
             ambientContext?.isAmbientSensingEnabled, ambientContext?.envBusynessTier,
             ambientContext?.bleRecallProbe?.probeTimestampMs
         )
@@ -84,6 +98,18 @@ class ExperimentDataManager(private val context: Context) {
                 put("hr", hr ?: JSONObject.NULL)
                 put("hrv_rmssd", hrv)
                 put("step_variance", stepVariance)
+                putFiniteDouble("hrr_fraction", hrrFraction)
+                putFiniteDouble("step_time_ms", stepTimeMs)
+                putFiniteDouble("cadence_spm", cadenceSpm)
+                put("is_walking", isWalking)
+                putFiniteDouble("step_cv_pct", stepCvPct)
+                putFiniteDouble("gait_z_score", gaitZScore)
+                putFiniteDouble("voice_z_score", voiceZScore)
+                putFiniteDouble("strain_reserve_bonus", strainReserveBonus)
+                putFiniteDouble("cusum_score", cusumScore)
+                put("baseline_calibrated", baselineCalibrated)
+                putFiniteDouble("baseline_step_cv_pct", baselineStepCvPct)
+                put("pilot_run_tag", pilotRunTag)
                 put("is_speaking", isSpeaking)
                 put("lat", lat ?: JSONObject.NULL)
                 put("lon", lon ?: JSONObject.NULL)

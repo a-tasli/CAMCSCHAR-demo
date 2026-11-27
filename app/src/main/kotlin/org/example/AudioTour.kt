@@ -21,13 +21,12 @@ enum class PresentationMode {
  * Everything the load level can modulate in the audio channel (pipeline-spec.md §7.0).
  * Produced by `TourManager.updateContext` on every tick and applied live.
  *
- * @param speed            TTS playback rate (×); applied mid-utterance via AudioTrack
- * @param pauseMs          silence inserted between script lines
- * @param detailed         `true` → detailed script, `false` → simplified script
- * @param checkpoint       re-speak the just-spoken key line once before advancing (High)
- * @param recapOnResume    on Overload recovery, re-speak the last completed line first
- * @param duckWhileSpeaking  volume-duck TTS while `isSpeaking` (disabled)
- * @param paused           playback paused by Overload rule (§7.1 Overload row)
+ * @param speed          TTS playback rate (×); applied mid-utterance via AudioTrack
+ * @param pauseMs        silence inserted between script lines
+ * @param detailed       `true` → detailed script, `false` → simplified script
+ * @param checkpoint     re-speak the just-spoken key line once before advancing (High)
+ * @param recapOnResume  on Overload recovery, re-speak the last completed line first
+ * @param paused         playback paused by Overload rule (§7.1 Overload row)
  */
 data class AudioTourParams(
     val speed: Float,
@@ -35,7 +34,6 @@ data class AudioTourParams(
     val detailed: Boolean,
     val checkpoint: Boolean = false,
     val recapOnResume: Boolean = false,
-    val duckWhileSpeaking: Boolean = false,
     val paused: Boolean = false
 ) {
     companion object {
