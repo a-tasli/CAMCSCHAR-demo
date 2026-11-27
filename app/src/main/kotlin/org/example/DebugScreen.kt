@@ -24,6 +24,7 @@ fun GaitApp(
     stepIntervals: List<Float>,
     analyzer: GaitAnalyzer,
     bleManager: BleHeartRateManager,
+    ambientScanManager: AmbientScanManager,
     voiceManager: VoiceSensorManager,
     locationSensorManager: LocationSensorManager,
     tourManager: TourManager,
@@ -39,6 +40,8 @@ fun GaitApp(
 ) {
     val hrValue by bleManager.heartRate.collectAsState()
     val bleState by bleManager.connectionState.collectAsState()
+    val ambientSnapshot by ambientScanManager.snapshot.collectAsState()
+    val isRecallProbeRunning by ambientScanManager.isRecallProbeRunning.collectAsState()
     val isSpeaking by voiceManager.isSpeaking.collectAsState()
     val isCooldown by voiceManager.isCooldown.collectAsState()
 
@@ -159,7 +162,7 @@ fun GaitApp(
 
                     Text(
                         text = if (isAutoMode)
-                            "• Dynamic (Auto Mode): the audio guide adapts speech rate, inter-line pauses, script density, and key-fact repetition (checkpoints) to the real-time load level (pipeline-spec §7.1)."
+                            "• Dynamic (Auto Mode): the audio guide adapts speech rate, inter-line pauses, script density, and overload pause/recap to the real-time load level (pipeline-spec §7.1)."
                         else
                             "• Static (Control): fixed Low-configuration delivery — detailed script, 1.0x TTS, no adaptation (§7.5).",
                         fontSize = 11.sp,
@@ -211,7 +214,7 @@ fun GaitApp(
                     }
 
                     Text(
-                        text = "• Audio modes move all adaptation into the narration (rate, pauses, density, checkpoints, earcons); map/images/transcript are hidden or reduced accordingly (§7.0).",
+                        text = "• Audio modes move all adaptation into the narration (rate, pauses, density, overload recap, earcons); map/images/transcript are hidden or reduced accordingly (§7.0).",
                         fontSize = 11.sp,
                         color = Color(0xFF006064),
                         lineHeight = 15.sp
@@ -458,6 +461,15 @@ fun GaitApp(
             Spacer(modifier = Modifier.height(8.dp))
 
             HeartRateCard(hrValue, bleState, features?.sdnn ?: 0.0)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            AmbientContextCard(
+                snapshot = ambientSnapshot,
+                isProbeRunning = isRecallProbeRunning,
+                onToggleAmbientSensing = { ambientScanManager.setEnabled(it) },
+                onRunRecallProbe = { ambientScanManager.runScreenOnRecallProbe() }
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 

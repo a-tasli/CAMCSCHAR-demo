@@ -17,7 +17,10 @@ import java.util.UUID
 import kotlin.math.roundToInt
 
 @SuppressLint("MissingPermission")
-class BleHeartRateManager(private val context: Context) {
+class BleHeartRateManager(
+    private val context: Context,
+    private val scanThrottler: BleScanThrottler = BleScanThrottler()
+) {
 
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
@@ -44,7 +47,7 @@ class BleHeartRateManager(private val context: Context) {
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             result?.device?.let { device ->
-                Log.d(TAG, "Found device: ${device.name ?: device.address}")
+                Log.d(TAG, "Found HR monitor matching 0x180D")
                 stopScan()
                 connectToDevice(device)
             }
@@ -165,6 +168,12 @@ class BleHeartRateManager(private val context: Context) {
         val scanner = bluetoothAdapter.bluetoothLeScanner
         if (scanner == null) {
             _connectionState.value = "BLE Scanner not available"
+            return
+        }
+
+        if (!scanThrottler.tryAcquire()) {
+            Log.w(TAG, "Scan throttled to respect Android 5-starts/30s quota")
+            _connectionState.value = "HR scan waiting for BLE quota..."
             return
         }
 

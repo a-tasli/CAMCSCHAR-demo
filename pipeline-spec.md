@@ -128,11 +128,17 @@ Runs a dedicated thread reading 16 kHz mono PCM in 512-sample (32 ms) chunks:
 3. **Hangover:** `isSpeaking` stays true for **3 s** after the last detected speech
    (`isCooldown` flag is exposed during the hangover).
 
-Output: boolean `isSpeaking` — used as a load modifier (TTS audio ducking is disabled).
+Output: boolean `isSpeaking` — used as a load modifier (TTS audio ducking is disabled). Non-speech chunks (`speechProb <= 0.5`) also feed `AcousticFrameAnalyzer` in volatile RAM to publish `ambientNoiseDbfs`, `ambientNoisePeakDbfs`, and `ambientMidbandRatio` (300–3000 Hz power fraction), alongside rolling 10 s `speechDutyCycle10s`. `VoiceSensorManager.setTtsActive()` currently gates chunk classification while `TTSManager.isSpeakingOut` is active.
 
 ### 3.5 Location (`LocationSensorManager`)
 
 GPS fixes are logged and drawn on the map; **not used in scoring**.
+
+### 3.6 Ambient RF context (`AmbientScanManager`) — *Stage 1 telemetry-only*
+
+- **BLE channel (`BleFilterCatalog` + `BleWindowAggregator`):** Scans continuously in `SCAN_MODE_LOW_POWER` using **70** Bluetooth SIG manufacturer Company IDs (`setManufacturerData` with 1-byte zeroed `[0x00]` masks) and **16** cross-brand 16-bit Service UUIDs (`setServiceUuid` + AD `0x16` `setServiceData` for Fast Pair `0xFE2C`, Eddystone `0xFEAA`, SmartTag `0xFD5A`/`FD69`, Tile `0xFEED`, Exposure `0xFD6F`, LE Audio), with automatic fallback (`full` → `core16` → 6-filter 10 s `batch` rotation) and app-wide `BleScanThrottler` (≤ 4 starts / 30 s). Includes an on-demand **10 s Screen-On Unfiltered Recall Probe** in Debug (`ble_probe_*`).
+- **Wi-Fi AP channel (`WifiScanAggregator`):** 100% SSID-blind (`ScanResult.SSID` / `wifiSsid` are never read); logs AP density, strong AP count (`≥ -65 dBm`), 5 GHz/6 GHz ratio, RSSI mean/std, inter-scan $|\Delta\text{RSSI}|$, IEEE `0x02` LAA BSSID count, transient APs, `802.11mc` count, and `wifi_scan_age_ms` (`adb shell settings put global wifi_scan_throttle_enabled 0` lifts OS throttling on study phones).
+- **Volatile privacy boundary (`EphemeralIdFilter`):** Raw MACs and BSSIDs are hashed immediately inside callbacks using `SHA-256(256-bit SecureRandom session salt || ID)` with a 180 s max RAM retention TTL; device names, manufacturer payload bytes, and raw audio are never stored or logged. Logged for post-hoc analysis only; **not fed into §6 scoring**.
 
 ---
 
@@ -390,6 +396,11 @@ on every state change.
 | `is_checkpoint_active` | checkpoint repetition flag (legacy / unused) *(new, v2)* |
 | `presentation_mode` | `multimodal` \| `audio_first` \| `audio_only` *(new, v2)* |
 | `lat`, `lon` | GPS |
+| `ambient_sensing_enabled`, `env_enclosure_hint`, `env_busyness_tier` | ambient consent flag & derived context *(Stage 1, logging-only)* |
+| `ble_filter_mode`, `ble_filter_count`, `ble_total_count`, `ble_near_count`, `ble_mid_count`, `ble_far_count`, `ble_mean_rssi`, `ble_max_rssi`, `ble_turnover_rate`, `ble_persistent_count`, `ble_packet_rate_hz`, `ble_phone_ecosystem_count`, `ble_audio_wearable_count`, `ble_tracker_beacon_count`, `ble_chipset_other_count` | RAM-salted BLE ambient aggregates *(Stage 1, zero MACs)* |
+| `ble_probe_total_count`, `ble_probe_matched_count`, `ble_probe_coverage_ratio` | screen-on 10 s unfiltered BLE recall probe summary *(Stage 1)* |
+| `wifi_ap_count`, `wifi_strong_ap_count`, `wifi_5ghz_ratio`, `wifi_mean_rssi`, `wifi_rssi_std`, `wifi_rssi_delta_abs_mean`, `wifi_laa_bssid_count`, `wifi_transient_ap_count`, `wifi_rtt_ap_count`, `wifi_scan_age_ms` | SSID-blind Wi-Fi AP aggregates *(Stage 1, zero SSIDs/BSSIDs)* |
+| `ambient_noise_dbfs`, `ambient_noise_peak_dbfs`, `ambient_midband_ratio`, `speech_duty_cycle_10s` | non-speech mic floor & 10 s speech duty *(Stage 1, RAM-only)* |
 | `trigger` | `event` \| `periodic` |
 
 Note: `hrv_rmssd` semantics changed with the unit fix — old recordings are in
@@ -411,8 +422,8 @@ plus a toggleable unified view. Series keys map to logged fields:
 | Physical Strain (%HRR) | `physical_strain_score` | right | cyan |
 | Combined Load Index | `combined_load_index` | right | purple |
 
-New v2 fields (`tts_speed`, `inter_line_delay_ms`, `is_checkpoint_active`,
-`presentation_mode`) are logged but not yet charted.
+New v2/Stage 1 fields (`tts_speed`, `inter_line_delay_ms`, `is_checkpoint_active`,
+`presentation_mode`, and `ble_*` / `wifi_*` / `ambient_*` / `env_*`) are logged but not yet charted.
 
 Hovering any chart shows all series' values at that timestamp on every chart (own
 series emphasized). Upload a session JSON or place it at `visualizer/data/latest_experiment.json`.
@@ -514,3 +525,7 @@ series emphasized). Upload a session JSON or place it at `visualizer/data/latest
    presentation modes until thresholds are retuned per mode.
 7. **Device-dependent TTS voices** (§11): cross-participant comparison requires a fixed
    engine/voice, otherwise the narration content itself differs between participants.
+8. **TTS microphone gating during wired-headset dual tasks:** `MainActivity` currently pipes
+   `TTSManager.isSpeakingOut` into `VoiceSensorManager.setTtsActive()`, which suppresses
+   `isSpeaking` while TTS audio plays (designed for loudspeaker mode; should be bypassed or
+   speaker-routed before running wired-headset sessions where participants speak during playback).

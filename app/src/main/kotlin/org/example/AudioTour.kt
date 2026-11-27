@@ -42,7 +42,7 @@ data class AudioTourParams(
         // v2 audio adaptation matrix (§7.1) — AUDIO_FIRST / AUDIO_ONLY
         val AUDIO_LOW: AudioTourParams = AudioTourParams(1.0f, 300L, detailed = true)
         val AUDIO_MEDIUM: AudioTourParams = AudioTourParams(0.85f, 1500L, detailed = true)
-        val AUDIO_HIGH: AudioTourParams = AudioTourParams(0.75f, 2000L, detailed = false, checkpoint = true)
+        val AUDIO_HIGH: AudioTourParams = AudioTourParams(0.75f, 2000L, detailed = false, checkpoint = false)
 
         // v1 legacy pins retained under MULTIMODAL (§7.6)
         val MM_LOW: AudioTourParams = AudioTourParams(1.0f, 0L, detailed = true)

@@ -26,8 +26,10 @@ import org.osmdroid.config.Configuration
 class MainActivity : ComponentActivity() {
 
     private val analyzer = GaitAnalyzer()
+    private val scanThrottler = BleScanThrottler()
     private lateinit var sensorManager: GaitSensorManager
     private lateinit var bleManager: BleHeartRateManager
+    private lateinit var ambientScanManager: AmbientScanManager
     private lateinit var voiceManager: VoiceSensorManager
     private lateinit var locationSensorManager: LocationSensorManager
     private lateinit var ttsManager: TTSManager
@@ -42,6 +44,7 @@ class MainActivity : ComponentActivity() {
             bleManager.startScan()
             locationSensorManager.start()
         }
+        ambientScanManager.onPermissionsUpdated()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,7 +54,8 @@ class MainActivity : ComponentActivity() {
         Configuration.getInstance().userAgentValue = packageName
 
         sensorManager = GaitSensorManager(this, analyzer)
-        bleManager = BleHeartRateManager(this)
+        bleManager = BleHeartRateManager(this, scanThrottler)
+        ambientScanManager = AmbientScanManager(this, scanThrottler)
         voiceManager = VoiceSensorManager(this)
         locationSensorManager = LocationSensorManager(this)
         ttsManager = TTSManager(this)
@@ -74,10 +78,12 @@ class MainActivity : ComponentActivity() {
                     MainAppScreen(
                         analyzer = analyzer,
                         bleManager = bleManager,
+                        ambientScanManager = ambientScanManager,
                         voiceManager = voiceManager,
                         locationSensorManager = locationSensorManager,
                         tourManager = tourManager,
-                        dataManager = dataManager
+                        dataManager = dataManager,
+                        ttsManager = ttsManager
                     )
                 }
             }
@@ -93,6 +99,7 @@ class MainActivity : ComponentActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
+            permissionsList.add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -117,6 +124,7 @@ class MainActivity : ComponentActivity() {
         } else {
             bleManager.startScan()
             locationSensorManager.start()
+            ambientScanManager.start()
         }
     }
 
@@ -126,6 +134,7 @@ class MainActivity : ComponentActivity() {
             sensorManager.start()
             voiceManager.start()
             locationSensorManager.start()
+            ambientScanManager.start()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -138,6 +147,7 @@ class MainActivity : ComponentActivity() {
                 sensorManager.stop()
                 voiceManager.stop()
                 locationSensorManager.stop()
+                ambientScanManager.stop()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -151,6 +161,7 @@ class MainActivity : ComponentActivity() {
                 sensorManager.stop()
                 voiceManager.stop()
                 locationSensorManager.stop()
+                ambientScanManager.stop()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -161,6 +172,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         TourControlBridge.reset()
         bleManager.disconnect()
+        ambientScanManager.destroy()
         ttsManager.shutdown()
     }
 }
@@ -169,10 +181,12 @@ class MainActivity : ComponentActivity() {
 fun MainAppScreen(
     analyzer: GaitAnalyzer,
     bleManager: BleHeartRateManager,
+    ambientScanManager: AmbientScanManager,
     voiceManager: VoiceSensorManager,
     locationSensorManager: LocationSensorManager,
     tourManager: TourManager,
-    dataManager: ExperimentDataManager
+    dataManager: ExperimentDataManager,
+    ttsManager: TTSManager
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Tour", "Debug")
@@ -250,6 +264,11 @@ fun MainAppScreen(
         analyzer.addRRIntervals(rrIntervals)
     }
 
+    val ttsSpeaking by ttsManager.isSpeakingOut.collectAsState()
+    LaunchedEffect(ttsSpeaking) {
+        voiceManager.setTtsActive(ttsSpeaking)
+    }
+
     // Steady 1 Hz ticker loop: reading latest state without restarting on speech toggle
     LaunchedEffect(Unit) {
         while (true) {
@@ -258,6 +277,14 @@ fun MainAppScreen(
                 val speaking = voiceManager.isSpeaking.value
                 val curLat = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLat.value else locationSensorManager.location.value?.latitude
                 val curLon = if (tourManager.isManualGpsMode.value) tourManager.manualLocationLon.value else locationSensorManager.location.value?.longitude
+
+                ambientScanManager.updateAcousticContext(
+                    noiseDbfs = voiceManager.ambientNoiseDbfs.value,
+                    noisePeakDbfs = voiceManager.ambientNoisePeakDbfs.value,
+                    midbandRatio = voiceManager.ambientMidbandRatio.value,
+                    speechDuty10s = voiceManager.speechDutyCycle10s.value
+                )
+                val ambientSnapshot = ambientScanManager.snapshot.value
 
                 val computedFeatures = analyzer.analyze(currentHr, speaking)
                 val effectiveLevel = if (tourManager.isManualLoadMode.value) {
@@ -289,7 +316,8 @@ fun MainAppScreen(
                     ttsSpeed = tourManager.audioParams.value.speed,
                     interLineDelayMs = tourManager.audioParams.value.pauseMs,
                     isCheckpointActive = tourManager.audioParams.value.checkpoint,
-                    presentationMode = tourManager.presentationMode.value.name.lowercase()
+                    presentationMode = tourManager.presentationMode.value.name.lowercase(),
+                    ambientContext = ambientSnapshot
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -347,6 +375,7 @@ fun MainAppScreen(
                     stepIntervals = stepIntervals,
                     analyzer = analyzer,
                     bleManager = bleManager,
+                    ambientScanManager = ambientScanManager,
                     voiceManager = voiceManager,
                     locationSensorManager = locationSensorManager,
                     tourManager = tourManager,

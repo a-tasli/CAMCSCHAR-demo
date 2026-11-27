@@ -59,16 +59,20 @@ class ExperimentDataManager(private val context: Context) {
         ttsSpeed: Float,
         interLineDelayMs: Long,
         isCheckpointActive: Boolean,
-        presentationMode: String
+        presentationMode: String,
+        // v3 IRB-safe ambient covariates (aggregate scalars only, zero PII)
+        ambientContext: AmbientContextSnapshot? = null
     ) = withContext(Dispatchers.IO) {
         if (!isRecording) return@withContext
 
         val currentTime = System.currentTimeMillis()
 
-        // Hash the state parameters to detect changes
+        // Hash the state parameters to detect structural/mode changes
         val stateHash = Objects.hash(
             poi, loadLevel, combinedLoadIndex, isAutoMode, isDetailed, isLargeImageMode,
-            isSpeaking, scriptLine, ttsSpeed, interLineDelayMs, isCheckpointActive, presentationMode
+            isSpeaking, scriptLine, ttsSpeed, interLineDelayMs, isCheckpointActive, presentationMode,
+            ambientContext?.isAmbientSensingEnabled, ambientContext?.envBusynessTier,
+            ambientContext?.bleRecallProbe?.probeTimestampMs
         )
         
         val isStateChange = stateHash != lastRecordedStateHash
@@ -96,6 +100,7 @@ class ExperimentDataManager(private val context: Context) {
                 put("inter_line_delay_ms", interLineDelayMs)
                 put("is_checkpoint_active", isCheckpointActive)
                 put("presentation_mode", presentationMode)
+                putAmbientFields(ambientContext)
                 put("trigger", if (isStateChange) "event" else "periodic")
             }
             
@@ -108,6 +113,62 @@ class ExperimentDataManager(private val context: Context) {
                 saveToFile()
             }
         }
+    }
+
+    private fun JSONObject.putFiniteDouble(key: String, value: Double?) {
+        if (value == null || !value.isFinite()) {
+            put(key, JSONObject.NULL)
+        } else {
+            put(key, value)
+        }
+    }
+
+    private fun JSONObject.putAmbientFields(ctx: AmbientContextSnapshot?) {
+        if (ctx == null) return
+        val enabled = ctx.isAmbientSensingEnabled
+        put("ambient_sensing_enabled", enabled)
+        put("env_enclosure_hint", ctx.envEnclosureHint)
+        put("env_busyness_tier", ctx.envBusynessTier)
+
+        // BLE aggregate covariates (zero MACs / zero device names / zero payload bytes)
+        put("ble_filter_mode", ctx.bleFilterMode)
+        put("ble_filter_count", ctx.bleFilterCount)
+        put("ble_total_count", if (enabled) ctx.bleTotalCount else JSONObject.NULL)
+        put("ble_near_count", if (enabled) ctx.bleNearCount else JSONObject.NULL)
+        put("ble_mid_count", if (enabled) ctx.bleMidCount else JSONObject.NULL)
+        put("ble_far_count", if (enabled) ctx.bleFarCount else JSONObject.NULL)
+        putFiniteDouble("ble_mean_rssi", if (enabled) ctx.bleMeanRssi else null)
+        put("ble_max_rssi", if (enabled) (ctx.bleMaxRssi ?: JSONObject.NULL) else JSONObject.NULL)
+        putFiniteDouble("ble_turnover_rate", if (enabled) ctx.bleTurnoverRate else null)
+        put("ble_persistent_count", if (enabled) ctx.blePersistentCount else JSONObject.NULL)
+        putFiniteDouble("ble_packet_rate_hz", if (enabled) ctx.blePacketRateHz else null)
+        put("ble_phone_ecosystem_count", if (enabled) ctx.blePhoneEcosystemCount else JSONObject.NULL)
+        put("ble_audio_wearable_count", if (enabled) ctx.bleAudioWearableCount else JSONObject.NULL)
+        put("ble_tracker_beacon_count", if (enabled) ctx.bleTrackerBeaconCount else JSONObject.NULL)
+        put("ble_chipset_other_count", if (enabled) ctx.bleChipsetOtherCount else JSONObject.NULL)
+
+        // BLE screen-on recall probe summary
+        put("ble_probe_total_count", ctx.bleRecallProbe?.probeTotalCount ?: JSONObject.NULL)
+        put("ble_probe_matched_count", ctx.bleRecallProbe?.probeMatchedCount ?: JSONObject.NULL)
+        putFiniteDouble("ble_probe_coverage_ratio", ctx.bleRecallProbe?.probeCoverageRatio)
+
+        // Wi-Fi AP aggregate covariates (100% SSID-blind, zero BSSIDs)
+        put("wifi_ap_count", if (enabled) (ctx.wifiApCount ?: JSONObject.NULL) else JSONObject.NULL)
+        put("wifi_strong_ap_count", if (enabled) (ctx.wifiStrongApCount ?: JSONObject.NULL) else JSONObject.NULL)
+        putFiniteDouble("wifi_5ghz_ratio", if (enabled) ctx.wifi5GhzRatio else null)
+        putFiniteDouble("wifi_mean_rssi", if (enabled) ctx.wifiMeanRssi else null)
+        putFiniteDouble("wifi_rssi_std", if (enabled) ctx.wifiRssiStd else null)
+        putFiniteDouble("wifi_rssi_delta_abs_mean", if (enabled) ctx.wifiRssiDeltaAbsMean else null)
+        put("wifi_laa_bssid_count", if (enabled) (ctx.wifiLaaBssidCount ?: JSONObject.NULL) else JSONObject.NULL)
+        put("wifi_transient_ap_count", if (enabled) (ctx.wifiTransientApCount ?: JSONObject.NULL) else JSONObject.NULL)
+        put("wifi_rtt_ap_count", if (enabled) (ctx.wifiRttApCount ?: JSONObject.NULL) else JSONObject.NULL)
+        put("wifi_scan_age_ms", if (enabled) (ctx.wifiScanAgeMs ?: JSONObject.NULL) else JSONObject.NULL)
+
+        // Acoustic non-speech covariates (RAM-only scalars)
+        putFiniteDouble("ambient_noise_dbfs", ctx.ambientNoiseDbfs)
+        putFiniteDouble("ambient_noise_peak_dbfs", ctx.ambientNoisePeakDbfs)
+        putFiniteDouble("ambient_midband_ratio", ctx.ambientMidbandRatio)
+        putFiniteDouble("speech_duty_cycle_10s", ctx.speechDutyCycle10s?.toDouble())
     }
 
     private fun saveToFile() {

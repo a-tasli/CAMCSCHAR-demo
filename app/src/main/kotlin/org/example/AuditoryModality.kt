@@ -14,7 +14,7 @@ data class AuditoryModalityConfig(
         "Low" to AudioTourParams(speed = 1.0f, pauseMs = 300L, detailed = true),
         "Waiting..." to AudioTourParams(speed = 1.0f, pauseMs = 300L, detailed = true),
         "Medium" to AudioTourParams(speed = 0.85f, pauseMs = 1500L, detailed = true),
-        "High" to AudioTourParams(speed = 0.75f, pauseMs = 2000L, detailed = false, checkpoint = true),
+        "High" to AudioTourParams(speed = 0.75f, pauseMs = 2000L, detailed = false, checkpoint = false),
         "Overload" to AudioTourParams(speed = 0.75f, pauseMs = 2000L, detailed = false, paused = true)
     ),
 

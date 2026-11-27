@@ -91,6 +91,9 @@ A single standardized hardware kit (or identical phone models with identical OS 
 * **Step and Location Sensing:** Hardware `TYPE_STEP_DETECTOR` (rolling 20-step nanosecond buffer, valid intervals 300–1200 ms, stop rule pinning `gaitLoadIndex` to 25 after 5 s without steps) and GPS geofencing.
 
 
+* **Ambient Context Covariates (Exploratory Logging Only):** Passively records aggregate BLE counts (86-filter Bluetooth SIG catalog), 100% SSID-blind Wi-Fi AP metrics (`adb shell settings put global wifi_scan_throttle_enabled 0` recommended on study phones), and non-speech microphone `dBFS` / spectral midband ratio. All MACs, BSSIDs, and audio chunks stay strictly inside volatile RAM (`EphemeralIdFilter`, 180 s max TTL); zero identifiers or audio are stored, and these covariates are excluded from cognitive-load scoring during this study. *(Note: before participant runs, verify `VoiceSensorManager.setTtsActive()` gating policy for wired-headset speech during active TTS.)*
+
+
 
 ### 2.4 Experimental Conditions
 
@@ -110,7 +113,7 @@ Both conditions use identical GPS geofence triggers, POI arrival earcons (900 ms
 
 ### Phase 0: Screening and Seated Baseline (4–5 min)
 
-1. Seated quietly near the Amphitheatre entrance, the participant provides informed consent and records age, self-rated prior knowledge of Sabancı campus history (1–5), and recent caffeine or exercise.
+1. Seated quietly near the Amphitheatre entrance, the participant provides informed consent (explicitly disclosing volatile RAM-only acoustic VAD/noise-floor processing and 180 s-TTL ephemeral-salted aggregate BLE/Wi-Fi logging with zero MAC/SSID/audio storage and an opt-out toggle in Debug) and records age, self-rated prior knowledge of Sabancı campus history (1–5), and recent caffeine or exercise.
 
 
 2. The researcher fits the BLE armband on the non-dominant forearm, connects the wired headset, plays a brief neutral TTS sample to set comfortable volume, and verifies live HR, step detection, and Silero VAD in the Debug tab.
@@ -227,6 +230,9 @@ Samples are logged every 1 s (`periodic`) and on every state change (`event`) in
 
 
 * **Spatial and logging metadata:** `timestamp`, `lat`, `lon`, `trigger`.
+
+
+* **Exploratory ambient covariates (logging-only, zero PII):** `ambient_sensing_enabled`, `env_enclosure_hint`, `env_busyness_tier`, `ble_*` (proximity/category/turnover/rate/recall-probe scalars), `wifi_*` (SSID-blind AP density/band/RSSI/LAA scalars), and `ambient_noise_dbfs` / `ambient_noise_peak_dbfs` / `ambient_midband_ratio` / `speech_duty_cycle_10s`.
 
 
 

@@ -84,7 +84,7 @@ class ManualCognitiveLoadTest {
         // index 0: normal
         // index 1: normal (interrupted by overload, recapped on resume)
         // index 2: normal (should NOT repeat twice on High load)
-        // index 3: key fact (SHOULD repeat once as checkpoint on High load)
+        // index 3: key fact (should NOT repeat by default when checkpoints are disabled)
         // index 4: normal
         val simplifiedField = TourManager::class.java.getDeclaredField("simplifiedScript").apply { isAccessible = true }
         val detailedField = TourManager::class.java.getDeclaredField("detailedScript").apply { isAccessible = true }
@@ -161,17 +161,11 @@ class ManualCognitiveLoadTest {
         Thread.sleep(20)
         assertEquals(3, tourManager.currentIndex, "Non-key-fact line must not repeat twice; should advance to index 3")
 
-        // Line 3 (key-fact line) completes: SHOULD be repeated once as a checkpoint
+        // Line 3 (key-fact line) completes: checkpoints are disabled by default, so it advances directly to index 4
         val line3UttId = waitForUtterance(line2UttId)
         onUtteranceCompletedFlow.tryEmit(line3UttId)
         Thread.sleep(20)
-        assertEquals(3, tourManager.currentIndex, "Key fact line should repeat once as checkpoint (index stays 3)")
-
-        // Checkpoint completion: now advances to index 4
-        val line3CheckpointId = waitForUtterance(line3UttId)
-        onUtteranceCompletedFlow.tryEmit(line3CheckpointId)
-        Thread.sleep(20)
-        assertEquals(4, tourManager.currentIndex, "After checkpoint repetition, should advance to line 4")
+        assertEquals(4, tourManager.currentIndex, "With checkpoints disabled by default, key fact line should advance directly to line 4")
     }
 
     @Test

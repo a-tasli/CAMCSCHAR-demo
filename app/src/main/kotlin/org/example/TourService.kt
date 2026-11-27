@@ -94,7 +94,16 @@ class TourService : Service() {
             try {
                 setUpMediaSession()
                 val notification = createNotification(TourControlBridge.isPlaying())
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val hasBle = hasAnyBluetoothForegroundPermission()
+                    val serviceType = if (hasBle) {
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                    } else {
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                    }
+                    startForeground(NOTIFICATION_ID, notification, serviceType)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(
                         NOTIFICATION_ID,
                         notification,
@@ -116,6 +125,17 @@ class TourService : Service() {
         // Hold the wake lock only while audio is actually playing.
         setWakeLock(TourControlBridge.isPlaying())
         return START_NOT_STICKY
+    }
+
+    private fun hasAnyBluetoothForegroundPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.BLUETOOTH_SCAN
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun setUpMediaSession() {

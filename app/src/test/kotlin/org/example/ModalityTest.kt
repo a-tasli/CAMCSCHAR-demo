@@ -85,7 +85,7 @@ class ModalityTest {
         assertEquals(0.75f, auditory.currentSpeed)
         assertEquals(2000L, auditory.currentDelay)
         assertFalse(auditory.isDetailed, "High load should use simplified script")
-        assertTrue(auditory.isCheckpointActive, "High load should enable checkpoints")
+        assertFalse(auditory.isCheckpointActive, "High load should keep checkpoints disabled by default")
         assertFalse(auditory.isPaused)
 
         // Overload state
@@ -101,14 +101,14 @@ class ModalityTest {
         auditory.setSpeed("High", 0.65f)
         auditory.setPauseMs("High", 3000L)
         auditory.setDensity("High", true) // Override to detailed
-        auditory.setCheckpoint("High", false) // Disable checkpoint
+        auditory.setCheckpoint("High", true) // Enable checkpoint override
 
         auditory.onCognitiveLoadChanged(CognitiveLoadState(loadLevel = "High", isAutoMode = true, isAudioMode = true))
 
         assertEquals(0.65f, auditory.currentSpeed, "Modified speed should be applied")
         assertEquals(3000L, auditory.currentDelay, "Modified pause delay should be applied")
         assertTrue(auditory.isDetailed, "Modified density should be applied")
-        assertFalse(auditory.isCheckpointActive, "Modified checkpoint flag should be applied")
+        assertTrue(auditory.isCheckpointActive, "Modified checkpoint flag should be applied")
 
         // Modify static control mode parameters
         auditory.setStaticSpeed(1.2f)

@@ -2,9 +2,13 @@ package org.example
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -246,6 +250,152 @@ fun StepIntervalGraph(intervals: List<Float>) {
                     style = Stroke(width = 2.dp.toPx())
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun AmbientContextCard(
+    snapshot: AmbientContextSnapshot,
+    isProbeRunning: Boolean,
+    onToggleAmbientSensing: (Boolean) -> Unit,
+    onRunRecallProbe: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val enabled = snapshot.isAmbientSensingEnabled
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Ambient Context (IRB-Safe)",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1B5E20)
+                    )
+                    Text(
+                        text = "${snapshot.envBusynessTier} • ${snapshot.envEnclosureHint}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF33691E)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggleAmbientSensing
+                )
+            }
+
+            Text(
+                text = "RAM-only ephemeral hashes (180 s max TTL). Zero MACs, BSSIDs, SSIDs, device names, or audio are ever logged or saved.",
+                fontSize = 11.sp,
+                color = Color(0xFF33691E),
+                lineHeight = 14.sp
+            )
+
+            HorizontalDivider()
+
+            Text(
+                text = "BLE (${snapshot.bleFilterMode}, ${snapshot.bleFilterCount} filters)",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.Black
+            )
+            ParameterRow(
+                "BLE Devices (N/M/F)",
+                if (!enabled) "Off"
+                else "${snapshot.bleTotalCount} (${snapshot.bleNearCount}/${snapshot.bleMidCount}/${snapshot.bleFarCount})"
+            )
+            ParameterRow(
+                "Turnover / Persistent / Rate",
+                if (!enabled) "Off"
+                else "${snapshot.bleTurnoverRate?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"} / ${snapshot.blePersistentCount} / ${String.format(Locale.US, "%.1f Hz", snapshot.blePacketRateHz)}"
+            )
+            ParameterRow(
+                "Categories (Ph/Au/Tg/Ch)",
+                if (!enabled) "Off"
+                else "${snapshot.blePhoneEcosystemCount}/${snapshot.bleAudioWearableCount}/${snapshot.bleTrackerBeaconCount}/${snapshot.bleChipsetOtherCount}"
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onRunRecallProbe,
+                    enabled = enabled && !isProbeRunning,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1B5E20))
+                ) {
+                    Text(
+                        text = if (isProbeRunning) "Probing Unfiltered (10s)..." else "Probe BLE Recall (10s)",
+                        fontSize = 12.sp
+                    )
+                }
+                val probe = snapshot.bleRecallProbe
+                Text(
+                    text = if (probe == null) {
+                        "Recall: --"
+                    } else {
+                        val pct = probe.probeCoverageRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"
+                        "Recall: ${probe.probeMatchedCount}/${probe.probeTotalCount} ($pct)"
+                    },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1B5E20)
+                )
+            }
+
+            HorizontalDivider()
+
+            Text(
+                text = "Wi-Fi APs (100% SSID-Blind)",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.Black
+            )
+            ParameterRow(
+                "APs (Strong >= -65) / 5 GHz",
+                if (!enabled) "Off"
+                else "${snapshot.wifiApCount ?: "--"} (${snapshot.wifiStrongApCount ?: "--"}) / ${snapshot.wifi5GhzRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"}"
+            )
+            ParameterRow(
+                "RSSI Mean / ΔRSSI / LAA",
+                if (!enabled) "Off"
+                else "${snapshot.wifiMeanRssi?.let { String.format(Locale.US, "%.1f", it) } ?: "--"} dBm / ${snapshot.wifiRssiDeltaAbsMean?.let { String.format(Locale.US, "%.1f", it) } ?: "--"} / ${snapshot.wifiLaaBssidCount ?: "--"}"
+            )
+            ParameterRow(
+                "Transient / 802.11mc / Age",
+                if (!enabled) "Off"
+                else "${snapshot.wifiTransientApCount ?: "--"} / ${snapshot.wifiRttApCount ?: "--"} / ${snapshot.wifiScanAgeMs?.let { "${it / 1000}s" } ?: "--"}"
+            )
+
+            HorizontalDivider()
+
+            Text(
+                text = "Acoustic Floor (Non-Speech RAM)",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.Black
+            )
+            ParameterRow(
+                "Noise / Peak (dBFS)",
+                "${snapshot.ambientNoiseDbfs?.let { String.format(Locale.US, "%.1f", it) } ?: "--"} / ${snapshot.ambientNoisePeakDbfs?.let { String.format(Locale.US, "%.1f", it) } ?: "--"}"
+            )
+            ParameterRow(
+                "Midband (300-3k) / Speech 10s",
+                "${snapshot.ambientMidbandRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"} / ${snapshot.speechDutyCycle10s?.let { String.format(Locale.US, "%.0f%%", it * 100f) } ?: "--"}"
+            )
         }
     }
 }
